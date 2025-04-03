@@ -1,13 +1,13 @@
 {
-  "name": "kastle-sdk",
+  "name": "@forbole/kastle-sdk",
   "version": "1.0.0",
   "description": "",
   "main": "dist/index.js",
   "scripts": {
-    "build": "tsc"
+    "build": "tsup"
   },
-  "dependencies": {},
   "devDependencies": {
+    "tsup": "^8.4.0",
     "typescript": "^5.5.3"
   },
   "private": true
