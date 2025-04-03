@@ -1,5 +1,8 @@
 export const isKaslteInstalled = () => {
+    let kastle = (globalThis.window as any).kastle;
     console.log(window)
     console.log(globalThis)
-    return !!(globalThis.window as any).kastle;
+    console.log(kastle)
+
+    return !!kastle;
 }
