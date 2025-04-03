@@ -2,7 +2,12 @@
   "name": "@forbole/kastle-sdk",
   "version": "1.0.0",
   "description": "",
-  "main": "dist/index.js",
+  "main": "./dist/index.js",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsup"
   },
@@ -10,5 +15,5 @@
     "tsup": "^8.4.0",
     "typescript": "^5.5.3"
   },
-  "private": true
+  "private": false
 }
