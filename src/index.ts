@@ -1,0 +1,1 @@
+export const isKaslteInstalled = () => (!!window as any).kastle
