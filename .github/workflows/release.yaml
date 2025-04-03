@@ -7,9 +7,6 @@ on:
 
 jobs:
   release:
-    defaults:
-      run:
-        working-directory: ./packages/sdk
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -21,7 +18,9 @@ jobs:
           node-version: "20.x"
           cache: "npm"
       - run: npm install
+        working-directory: ./packages/sdk
       - run: npm run build
+        working-directory: ./packages/sdk
 
       - name: Semantic Release
         uses: cycjimmy/semantic-release-action@v4
