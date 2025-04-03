@@ -7,6 +7,9 @@ on:
 
 jobs:
   release:
+    defaults:
+      run:
+        working-directory: ./packages/sdk
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
