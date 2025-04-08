@@ -34,7 +34,7 @@ export const getNetwork = async (): Promise<string> => {
  * @param network The network to switch to
  */
 export const switchNetwork = async (network: Network): Promise<boolean> => {
-  return getKaspaProvider()?.request("get-wallet-address", { network });
+  return getKaspaProvider()?.request("switch-network", { network });
 };
 
 /**
