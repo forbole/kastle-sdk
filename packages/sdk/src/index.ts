@@ -16,6 +16,24 @@ export const isWalletInstalled = async (): Promise<boolean> => {
 };
 
 /**
+ * Disconnects the wallet from the platform
+ * @param origin Optional origin parameter
+ */
+export const disconnect = async (origin?: string): Promise<void> => {
+  return getKaspaProvider()?.disconnect();
+};
+
+/**
+ * Connect the wallet for the platform
+ * @param network Optional network to connect the wallet to
+ */
+export const connect = async (
+  network?: "mainnet" | "testnet-10",
+): Promise<void> => {
+  return getKaspaProvider()?.connect();
+};
+
+/**
  * Returns the currently connected wallet address
  */
 export const getWalletAddress = async (): Promise<string> => {
@@ -34,25 +52,20 @@ export const getNetwork = async (): Promise<string> => {
  * @param network The network to switch to
  */
 export const switchNetwork = async (network: Network): Promise<boolean> => {
-  return getKaspaProvider()?.request("switch-network", { network });
-};
+  const iconElement =
+    document.querySelector('link[rel="icon"]') ||
+    document.querySelector('link[rel="shortcut icon"]');
 
-/**
- * Disconnects the wallet from the platform
- * @param origin Optional origin parameter
- */
-export const disconnect = async (origin?: string): Promise<void> => {
-  return getKaspaProvider()?.disconnect();
-};
+  let iconUrl: string | undefined;
+  if (iconElement instanceof HTMLLinkElement) {
+    iconUrl = iconElement.href;
+  }
 
-/**
- * Connect the wallet for the platform
- * @param network Optional network to connect the wallet to
- */
-export const connect = async (
-  network?: "mainnet" | "testnet-10",
-): Promise<void> => {
-  return getKaspaProvider()?.connect();
+  return getKaspaProvider()?.request("switch-network", {
+    network,
+    name: document.title,
+    icon: iconUrl,
+  });
 };
 
 /**
