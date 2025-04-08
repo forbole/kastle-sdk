@@ -1,11 +1,16 @@
+import { KaspaProvider } from "./provider";
+
+type Network = "mainnet" | "testnet-10";
+
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const getKaspaProvider = (): KaspaProvider | undefined =>
+  (window as any).kastle;
 
 /**
  * Checks if the wallet provider is installed
  */
 export const isWalletInstalled = async (): Promise<boolean> => {
-  // Waiting for extension script to be injected
-  // TODO Publish an event from the script instead https://eips.ethereum.org/EIPS/eip-6963
   await sleep(100);
   return !!(window as any).kastle;
 };
@@ -14,25 +19,22 @@ export const isWalletInstalled = async (): Promise<boolean> => {
  * Returns the currently connected wallet address
  */
 export const getWalletAddress = async (): Promise<string> => {
-  // TODO: Implement retrieving connected wallet address
-  return "";
+  return getKaspaProvider()?.request("get-wallet-address");
 };
 
 /**
  * Returns the active Kaspa network (mainnet, testnet, devnet)
  */
 export const getNetwork = async (): Promise<string> => {
-  // TODO: Implement getting current network
-  return "";
+  return getKaspaProvider()?.request("get-network");
 };
 
 /**
  * Requests a network switch to a different Kaspa chain
  * @param network The network to switch to
  */
-export const switchNetwork = async (network: string): Promise<boolean> => {
-  // TODO: Implement network switching logic
-  return false;
+export const switchNetwork = async (network: Network): Promise<boolean> => {
+  return getKaspaProvider()?.request("get-wallet-address", { network });
 };
 
 /**
@@ -40,7 +42,17 @@ export const switchNetwork = async (network: string): Promise<boolean> => {
  * @param origin Optional origin parameter
  */
 export const disconnect = async (origin?: string): Promise<void> => {
-  // TODO: Implement wallet disconnection
+  return getKaspaProvider()?.disconnect();
+};
+
+/**
+ * Connect the wallet for the platform
+ * @param network Optional network to connect the wallet to
+ */
+export const connect = async (
+  network?: "mainnet" | "testnet-10",
+): Promise<void> => {
+  return getKaspaProvider()?.connect();
 };
 
 /**
@@ -54,22 +66,24 @@ export const sendKaspa = async (
   amountSompi: number,
   options?: { priorityFee?: number },
 ): Promise<string> => {
-  // TODO: Implement KAS transfer
-  return "";
+  return getKaspaProvider()?.request("send-kaspa", {
+    toAddress,
+    amountSompi,
+    options,
+  });
 };
 
 /**
  * Fetches the current balance of the wallet
  */
 export const getBalance = async (): Promise<number> => {
-  // TODO: Implement balance retrieval
-  return 0;
+  return getKaspaProvider()?.request("get-balance");
 };
 
 // TODO ask KaspaCom
-type ProtocolType = any;
+type ProtocolType = "kns" | "krc20" | "krc721";
 // TODO ask KaspaCom
-type PsktActionsEnum = any;
+type PsktActions = string;
 
 /**
  * Signs a PSKT transaction for KRC20/KRC721 transfers
@@ -83,17 +97,30 @@ export const signPskt = async (
   txJsonString: string,
   submit?: boolean,
   protocol?: ProtocolType,
-  protocolAction?: PsktActionsEnum,
+  protocolAction?: PsktActions,
   priorityFee?: number,
 ): Promise<string> => {
-  // TODO: Implement PSKT signing
-  return "";
+  return getKaspaProvider()?.request("sign-pskt", {
+    txJsonString,
+    submit,
+    protocol,
+    protocolAction,
+    priorityFee,
+  });
 };
 
-// TODO ask KaspaCom
-type ProtocolScript = any;
-// TODO ask KaspaCom
-type CommitRevealOptions = any;
+// TODO ask KaspaCom, JSON?
+type ProtocolScript = string;
+type CommitRevealOptions = {
+  priorityFee?: number;
+  revealPriorityFee?: number;
+  additionalOutput: Array<{ address: string; amount: number }>;
+  commitTransactionId: string;
+  revealPskt: {
+    outputs: Array<{ address: string; amount: number }>;
+    script: any; // TODO ask KaspaCom
+  };
+};
 
 /**
  * Commits and reveals a transaction, used for minting/listing KRC assets
@@ -104,8 +131,10 @@ export const doCommitReveal = async (
   actionScript: ProtocolScript,
   options?: CommitRevealOptions,
 ): Promise<string> => {
-  // TODO: Implement commit-reveal operation
-  return "";
+  return getKaspaProvider()?.request("do-commit-reveal", {
+    actionScript,
+    options,
+  });
 };
 
 // TODO ask KaspaCom
@@ -116,16 +145,14 @@ type RevealOptions = any;
  * @param options Reveal options
  */
 export const doRevealOnly = async (options: RevealOptions): Promise<string> => {
-  // TODO: Implement reveal-only operation
-  return "";
+  return getKaspaProvider()?.request("do-reveal-only", { options });
 };
 
 /**
  * Retrieves the public key associated with the wallet
  */
 export const getPublicKey = async (): Promise<string> => {
-  // TODO: Implement public key retrieval
-  return "";
+  return getKaspaProvider()?.request("get-public-key");
 };
 
 /**
@@ -137,12 +164,26 @@ export const signMessage = async (
   msg: string,
   type?: string,
 ): Promise<string> => {
-  // TODO: Implement message signing
-  return "";
+  return getKaspaProvider()?.request("sign-message", { msg, type });
 };
 
 // TODO ask KaspaCom
 type WalletEventHandlersInterface = (event: any) => void;
+
+/**
+ * Retrieves unspent utxo for wallet
+ * @param p2shAddress Optional p2sh address
+ */
+export const getUtxoAddress = async (p2shAddress?: string): Promise<any[]> => {
+  return getKaspaProvider()?.request("get-utxo-address", { p2shAddress });
+};
+
+/**
+ * Compounds wallet utxo (optional implementation)
+ */
+export const compoundUtxo = async (): Promise<string> => {
+  return getKaspaProvider()?.request("compount-utxo");
+};
 
 /**
  * Registers event listeners for account/network/balance changes
@@ -159,21 +200,4 @@ export const setEventListeners = (
  */
 export const removeEventListeners = (): void => {
   // TODO: Implement event listener removal
-};
-
-/**
- * Retrieves unspent utxo for wallet
- * @param p2shAddress Optional p2sh address
- */
-export const getUtxoAddress = async (p2shAddress?: string): Promise<any[]> => {
-  // TODO: Implement UTXO retrieval
-  return [];
-};
-
-/**
- * Compounds wallet utxo (optional implementation)
- */
-export const compoundUtxo = async (): Promise<string> => {
-  // TODO: Implement UTXO compounding (optional)
-  return "";
 };
