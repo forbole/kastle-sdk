@@ -182,7 +182,7 @@ export const getUtxoAddress = async (p2shAddress?: string): Promise<any[]> => {
  * Compounds wallet utxo (optional implementation)
  */
 export const compoundUtxo = async (): Promise<string> => {
-  return getKaspaProvider()?.request("compount-utxo");
+  return getKaspaProvider()?.request("compound-utxo");
 };
 
 /**
