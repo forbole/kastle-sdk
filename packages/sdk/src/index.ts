@@ -1,18 +1,22 @@
-import { KaspaProvider } from "./provider";
-
-type Network = "mainnet" | "testnet-10";
-
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-
-const getKaspaProvider = (): KaspaProvider | undefined =>
-  (window as any).kastle;
+import { getKaspaProvider, NetworkId } from "./provider";
+import { createTransactions } from "./wasm/kaspa";
+import {
+  connectToRPC,
+  listeners,
+  rpcClient,
+  updateWatchedAddress,
+} from "./rpc-client";
 
 /**
  * Checks if the wallet provider is installed
  */
-export const isWalletInstalled = async (): Promise<boolean> => {
-  await sleep(100);
-  return !!(window as any).kastle;
+export const isWalletInstalled = (): boolean => {
+  try {
+    getKaspaProvider();
+    return true;
+  } catch (_) {
+    return false;
+  }
 };
 
 /**
@@ -20,52 +24,76 @@ export const isWalletInstalled = async (): Promise<boolean> => {
  * @param origin Optional origin parameter
  */
 export const disconnect = async (origin?: string): Promise<void> => {
-  return getKaspaProvider()?.disconnect();
+  return getKaspaProvider().disconnect();
 };
 
 /**
  * Connect the wallet for the platform
- * @param network Optional network to connect the wallet to
+ * @param networkId Optional network to connect the wallet to
  */
 export const connect = async (
-  network?: "mainnet" | "testnet-10",
-): Promise<void> => {
-  return getKaspaProvider()?.connect();
+  networkId: NetworkId = "mainnet",
+): Promise<boolean> => {
+  const isSuccessful = await getKaspaProvider().connect(networkId);
+
+  // Reconnect to the currently selected network
+  if (isSuccessful) {
+    await connectToRPC();
+  }
+
+  return isSuccessful;
 };
 
 /**
  * Returns the currently connected wallet address
  */
 export const getWalletAddress = async (): Promise<string> => {
-  return getKaspaProvider()?.request("get-wallet-address");
+  let account: { address: string; publicKey: string } =
+    await getKaspaProvider().request("get-account");
+
+  return account.address;
 };
 
 /**
- * Returns the active Kaspa network (mainnet, testnet, devnet)
+ * Retrieves the public key associated with the wallet
  */
-export const getNetwork = async (): Promise<string> => {
-  return getKaspaProvider()?.request("get-network");
+export const getPublicKey = async (): Promise<string> => {
+  let account: { address: string; publicKey: string } =
+    await getKaspaProvider().request("get-account");
+
+  return account.publicKey;
+};
+
+/**
+ * Returns the active Kaspa network (mainnet, testnet)
+ */
+export const getNetwork = async (): Promise<NetworkId> => {
+  return getKaspaProvider().request("get-network");
 };
 
 /**
  * Requests a network switch to a different Kaspa chain
- * @param network The network to switch to
+ * @param networkId The network to switch to
  */
-export const switchNetwork = async (network: Network): Promise<boolean> => {
-  const iconElement =
-    document.querySelector('link[rel="icon"]') ||
-    document.querySelector('link[rel="shortcut icon"]');
+export const switchNetwork = async (networkId: NetworkId): Promise<boolean> => {
+  let isSuccessful = await connect(networkId);
 
-  let iconUrl: string | undefined;
-  if (iconElement instanceof HTMLLinkElement) {
-    iconUrl = iconElement.href;
+  // Reconnect to the currently selected network
+  if (isSuccessful) {
+    await connectToRPC();
   }
 
-  return getKaspaProvider()?.request("switch-network", {
-    network,
-    name: document.title,
-    icon: iconUrl,
-  });
+  return isSuccessful;
+};
+
+/**
+ * Fetches the current balance of the wallet
+ */
+export const getBalance = async (): Promise<number> => {
+  const address = await getWalletAddress();
+  const response = await rpcClient?.getBalanceByAddress({ address });
+
+  return parseInt(response?.balance?.toString() ?? "0", 10);
 };
 
 /**
@@ -79,18 +107,32 @@ export const sendKaspa = async (
   amountSompi: number,
   options?: { priorityFee?: number },
 ): Promise<string> => {
-  return getKaspaProvider()?.request("send-kaspa", {
-    toAddress,
-    amountSompi,
-    options,
-  });
-};
+  if (!rpcClient) throw new Error("Unable to reach RPC");
 
-/**
- * Fetches the current balance of the wallet
- */
-export const getBalance = async (): Promise<number> => {
-  return getKaspaProvider()?.request("get-balance");
+  let currentAddress = await getWalletAddress();
+  let { entries } = await rpcClient.getUtxosByAddresses({
+    addresses: [currentAddress],
+  });
+
+  let { transactions } = await createTransactions({
+    changeAddress: currentAddress,
+    entries,
+    outputs: [
+      {
+        address: toAddress,
+        amount: BigInt(amountSompi),
+      },
+    ],
+    priorityFee: BigInt(options?.priorityFee ?? 0),
+    networkId: await getNetwork(),
+  });
+
+  const [transaction] = transactions;
+
+  return getKaspaProvider().request("sign-and-broadcast-tx", {
+    networkId: await getNetwork(),
+    txJson: transaction.serializeToSafeJSON(),
+  });
 };
 
 // TODO ask KaspaCom
@@ -113,13 +155,7 @@ export const signPskt = async (
   protocolAction?: PsktActions,
   priorityFee?: number,
 ): Promise<string> => {
-  return getKaspaProvider()?.request("sign-pskt", {
-    txJsonString,
-    submit,
-    protocol,
-    protocolAction,
-    priorityFee,
-  });
+  throw new Error("Not implemented");
 };
 
 // TODO ask KaspaCom, JSON?
@@ -144,10 +180,7 @@ export const doCommitReveal = async (
   actionScript: ProtocolScript,
   options?: CommitRevealOptions,
 ): Promise<string> => {
-  return getKaspaProvider()?.request("do-commit-reveal", {
-    actionScript,
-    options,
-  });
+  throw new Error("Not implemented");
 };
 
 // TODO ask KaspaCom
@@ -158,14 +191,7 @@ type RevealOptions = any;
  * @param options Reveal options
  */
 export const doRevealOnly = async (options: RevealOptions): Promise<string> => {
-  return getKaspaProvider()?.request("do-reveal-only", { options });
-};
-
-/**
- * Retrieves the public key associated with the wallet
- */
-export const getPublicKey = async (): Promise<string> => {
-  return getKaspaProvider()?.request("get-public-key");
+  throw new Error("Not implemented");
 };
 
 /**
@@ -177,26 +203,47 @@ export const signMessage = async (
   msg: string,
   type?: string,
 ): Promise<string> => {
-  return getKaspaProvider()?.request("sign-message", { msg, type });
+  throw new Error("Not implemented");
 };
-
-// TODO ask KaspaCom
-type WalletEventHandlersInterface = (event: any) => void;
 
 /**
  * Retrieves unspent utxo for wallet
  * @param p2shAddress Optional p2sh address
  */
 export const getUtxoAddress = async (p2shAddress?: string): Promise<any[]> => {
-  return getKaspaProvider()?.request("get-utxo-address", { p2shAddress });
+  if (!rpcClient) throw new Error("Unable to reach RPC");
+
+  const address = p2shAddress ?? (await getWalletAddress());
+
+  const { entries } = await rpcClient.getUtxosByAddresses({
+    addresses: [address],
+  });
+
+  return entries;
 };
 
 /**
  * Compounds wallet utxo (optional implementation)
  */
 export const compoundUtxo = async (): Promise<string> => {
-  return getKaspaProvider()?.request("compound-utxo");
+  throw new Error("Not implemented");
 };
+
+window.addEventListener("message", async (event) => {
+  const eventIdsToWatch = ["kas_networkChanged", "kas_accountChanged"];
+
+  if (eventIdsToWatch.includes(event.data?.id)) {
+    for (const listener of listeners) {
+      listener({ id: event.data?.id, response: event.data?.response });
+    }
+  }
+
+  if (event.data?.id === "kas_accountChanged") {
+    await updateWatchedAddress();
+  }
+});
+
+export type WalletEventHandlersInterface = (event: any) => void;
 
 /**
  * Registers event listeners for account/network/balance changes
@@ -205,12 +252,12 @@ export const compoundUtxo = async (): Promise<string> => {
 export const setEventListeners = (
   eventListeners: WalletEventHandlersInterface,
 ): void => {
-  // TODO: Implement event listener registration
+  listeners.add(eventListeners);
 };
 
 /**
  * Removes event listeners when the user disconnects
  */
 export const removeEventListeners = (): void => {
-  // TODO: Implement event listener removal
+  listeners.clear();
 };
