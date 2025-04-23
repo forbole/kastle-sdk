@@ -1,7 +1,7 @@
 export type NetworkId = "mainnet" | "testnet-10";
 
 export interface KaspaProvider {
-  connect: (networkId: NetworkId) => Promise<boolean>;
+  connect: () => Promise<boolean>;
   disconnect: () => Promise<void>;
   request: (method: string, args?: any) => Promise<any>;
 }
@@ -14,7 +14,7 @@ declare global {
 
 let kastleProvider: KaspaProvider;
 
-let kastleInstallListener = async (event: MessageEvent<any>) => {
+const kastleInstallListener = async (event: MessageEvent<any>) => {
   if (event.data?.id === "kastle_installed") {
     kastleProvider = (window as any).kastle;
     window.removeEventListener("message", kastleInstallListener);

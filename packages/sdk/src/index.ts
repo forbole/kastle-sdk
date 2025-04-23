@@ -31,10 +31,8 @@ export const disconnect = async (origin?: string): Promise<void> => {
  * Connect the wallet for the platform
  * @param networkId Optional network to connect the wallet to
  */
-export const connect = async (
-  networkId: NetworkId = "mainnet",
-): Promise<boolean> => {
-  const isSuccessful = await getKaspaProvider().connect(networkId);
+export const connect = async (): Promise<boolean> => {
+  const isSuccessful = await getKaspaProvider().connect();
 
   // Reconnect to the currently selected network
   if (isSuccessful) {
@@ -49,7 +47,7 @@ export const connect = async (
  */
 export const getWalletAddress = async (): Promise<string> => {
   let account: { address: string; publicKey: string } =
-    await getKaspaProvider().request("get-account");
+    await getKaspaProvider().request("kas:get_account");
 
   return account.address;
 };
@@ -59,7 +57,7 @@ export const getWalletAddress = async (): Promise<string> => {
  */
 export const getPublicKey = async (): Promise<string> => {
   let account: { address: string; publicKey: string } =
-    await getKaspaProvider().request("get-account");
+    await getKaspaProvider().request("kas:get_account");
 
   return account.publicKey;
 };
@@ -68,7 +66,7 @@ export const getPublicKey = async (): Promise<string> => {
  * Returns the active Kaspa network (mainnet, testnet)
  */
 export const getNetwork = async (): Promise<NetworkId> => {
-  return getKaspaProvider().request("get-network");
+  return getKaspaProvider().request("kas:get_network");
 };
 
 /**
@@ -76,7 +74,7 @@ export const getNetwork = async (): Promise<NetworkId> => {
  * @param networkId The network to switch to
  */
 export const switchNetwork = async (networkId: NetworkId): Promise<boolean> => {
-  let isSuccessful = await connect(networkId);
+  let isSuccessful = await connect();
 
   // Reconnect to the currently selected network
   if (isSuccessful) {
@@ -129,7 +127,7 @@ export const sendKaspa = async (
 
   const [transaction] = transactions;
 
-  return getKaspaProvider().request("sign-and-broadcast-tx", {
+  return getKaspaProvider().request("kas:sign_and_broadcast_tx", {
     networkId: await getNetwork(),
     txJson: transaction.serializeToSafeJSON(),
   });
@@ -230,7 +228,7 @@ export const compoundUtxo = async (): Promise<string> => {
 };
 
 window.addEventListener("message", async (event) => {
-  const eventIdsToWatch = ["kas_networkChanged", "kas_accountChanged"];
+  const eventIdsToWatch = ["kas:network_changed", "kas:account_changed"];
 
   if (eventIdsToWatch.includes(event.data?.id)) {
     for (const listener of listeners) {
@@ -238,7 +236,7 @@ window.addEventListener("message", async (event) => {
     }
   }
 
-  if (event.data?.id === "kas_accountChanged") {
+  if (event.data?.id === "kas:account_changed") {
     await updateWatchedAddress();
   }
 });

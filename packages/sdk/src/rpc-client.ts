@@ -40,7 +40,7 @@ export const updateWatchedAddress = async () => {
 
 const listenBalanceChange = (event: IUtxosChanged) => {
   for (const listener of listeners) {
-    listener({ id: "kas_balanceChanged", response: null });
+    listener({ id: "kas:balance_changed", response: null });
   }
 };
 
