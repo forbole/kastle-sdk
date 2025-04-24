@@ -1,10 +1,4 @@
-export type NetworkId = "mainnet" | "testnet-10";
-
-export interface KaspaProvider {
-  connect: () => Promise<boolean>;
-  disconnect: () => Promise<void>;
-  request: (method: string, args?: any) => Promise<any>;
-}
+import { KaspaProvider } from "../interfaces";
 
 declare global {
   interface Window {
@@ -27,7 +21,7 @@ export const getKaspaProvider = (): KaspaProvider => {
   let kastleBrowserAPI = kastleProvider;
 
   if (!kastleBrowserAPI) {
-    throw new Error("Kastle wallet not installed");
+    kastleBrowserAPI = (window as any).kastle;
   }
 
   return kastleBrowserAPI;

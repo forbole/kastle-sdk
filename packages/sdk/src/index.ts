@@ -1,11 +1,8 @@
-import { getKaspaProvider, NetworkId } from "./provider";
+import { getKaspaProvider } from "./kastle/provider";
 import { createTransactions } from "./wasm/kaspa";
-import {
-  connectToRPC,
-  listeners,
-  rpcClient,
-  updateWatchedAddress,
-} from "./rpc-client";
+import { connectToRPC, rpcClient, watchBalanceChanged } from "./rpc-client";
+import { IWalletEventHandler, NetworkId } from "./interfaces";
+import { listeners, ListenerMethod } from "./listener";
 
 /**
  * Checks if the wallet provider is installed
@@ -21,25 +18,18 @@ export const isWalletInstalled = (): boolean => {
 
 /**
  * Disconnects the wallet from the platform
- * @param origin Optional origin parameter
  */
-export const disconnect = async (origin?: string): Promise<void> => {
+export const disconnect = async (): Promise<void> => {
   return getKaspaProvider().disconnect();
 };
 
 /**
  * Connect the wallet for the platform
- * @param networkId Optional network to connect the wallet to
  */
 export const connect = async (): Promise<boolean> => {
-  const isSuccessful = await getKaspaProvider().connect();
-
-  // Reconnect to the currently selected network
-  if (isSuccessful) {
-    await connectToRPC();
-  }
-
-  return isSuccessful;
+  const connected = await getKaspaProvider().connect();
+  watchBalanceChanged(await getWalletAddress());
+  return connected;
 };
 
 /**
@@ -73,15 +63,20 @@ export const getNetwork = async (): Promise<NetworkId> => {
  * Requests a network switch to a different Kaspa chain
  * @param networkId The network to switch to
  */
-export const switchNetwork = async (networkId: NetworkId): Promise<boolean> => {
-  let isSuccessful = await connect();
+export const switchNetwork = async (
+  networkId: NetworkId,
+): Promise<NetworkId> => {
+  let target = await getKaspaProvider().request(
+    "kas:switch_network",
+    networkId,
+  );
 
   // Reconnect to the currently selected network
-  if (isSuccessful) {
+  if (target) {
     await connectToRPC();
   }
 
-  return isSuccessful;
+  return target;
 };
 
 /**
@@ -195,23 +190,17 @@ export const doRevealOnly = async (options: RevealOptions): Promise<string> => {
 /**
  * Signs a message using the wallet's private key and returns the signature
  * @param msg Message to sign
- * @param type Optional signature type
  */
-export const signMessage = async (
-  msg: string,
-  type?: string,
-): Promise<string> => {
-  throw new Error("Not implemented");
+export const signMessage = async (msg: string): Promise<string> => {
+  return await getKaspaProvider().request("kas:sign_message", msg);
 };
 
 /**
- * Retrieves unspent utxo for wallet
- * @param p2shAddress Optional p2sh address
+ * Retrieves unspent utxo by a address
+ * @param address address
  */
-export const getUtxoAddress = async (p2shAddress?: string): Promise<any[]> => {
+export const getUtxosByAddress = async (address: string): Promise<any[]> => {
   if (!rpcClient) throw new Error("Unable to reach RPC");
-
-  const address = p2shAddress ?? (await getWalletAddress());
 
   const { entries } = await rpcClient.getUtxosByAddresses({
     addresses: [address],
@@ -227,35 +216,24 @@ export const compoundUtxo = async (): Promise<string> => {
   throw new Error("Not implemented");
 };
 
-window.addEventListener("message", async (event) => {
-  const eventIdsToWatch = ["kas:network_changed", "kas:account_changed"];
-
-  if (eventIdsToWatch.includes(event.data?.id)) {
-    for (const listener of listeners) {
-      listener({ id: event.data?.id, response: event.data?.response });
-    }
-  }
-
-  if (event.data?.id === "kas:account_changed") {
-    await updateWatchedAddress();
-  }
-});
-
-export type WalletEventHandlersInterface = (event: any) => void;
-
 /**
- * Registers event listeners for account/network/balance changes
- * @param eventListeners Event listener interface
+ * Registers event handler for performing actions when wallet events occur
+ * @param method Event method (e.g., "kas:network_changed", "kas:account_changed" or "kas:balance_changed")
+ * @param handler Event handler
  */
-export const setEventListeners = (
-  eventListeners: WalletEventHandlersInterface,
+export const setEventListener = (
+  method: ListenerMethod,
+  handler: IWalletEventHandler,
 ): void => {
-  listeners.add(eventListeners);
+  listeners[method].add(handler);
 };
 
 /**
- * Removes event listeners when the user disconnects
+ * Removes all the event listeners
  */
 export const removeEventListeners = (): void => {
-  listeners.clear();
+  for (const method in listeners) {
+    const typedMethod = method as ListenerMethod;
+    listeners[typedMethod].clear();
+  }
 };

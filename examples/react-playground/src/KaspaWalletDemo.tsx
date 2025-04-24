@@ -8,7 +8,7 @@ import {
   isWalletInstalled,
   removeEventListeners,
   sendKaspa,
-  setEventListeners,
+  setEventListener,
   switchNetwork,
 } from "@forbole/kastle-sdk";
 import React, { useEffect, useState } from "react";
@@ -30,19 +30,29 @@ const KaspaWalletDemo = () => {
   // Check if wallet is installed on mount
   useEffect(() => {
     const checkWalletInstallation = () => {
-      const installed = isWalletInstalled();
-      setWalletInstalled(installed);
-      return installed;
+      try {
+        const installed = isWalletInstalled();
+        setWalletInstalled(installed);
+        return installed;
+      } catch (error) {
+        return false;
+      }
     };
 
     if (walletInstalled) return;
 
     // Set up polling if not loaded yet
+    let checkTime = 0;
     const intervalId = setInterval(() => {
+      if (checkTime > 10) {
+        clearInterval(intervalId);
+        return;
+      }
+
       if (checkWalletInstallation()) {
         clearInterval(intervalId);
       }
-    }, 100); // Check every 100ms
+    }, 200); // Check every 200ms
 
     // Clean up interval on component unmount
     return () => clearInterval(intervalId);
@@ -50,18 +60,10 @@ const KaspaWalletDemo = () => {
 
   // Set up wallet event listeners
   useEffect(() => {
-    const handleWalletEvents = (event: any) => {
-      console.log("Received event", event.id);
-      if (event.id === "kas_networkChanged") {
-        setNetwork(event.response);
-        updateWalletInfo();
-      } else if (event.id === "kas_accountChanged") {
-        updateWalletInfo();
-      }
-    };
-
     if (connected) {
-      setEventListeners(handleWalletEvents);
+      setEventListener("kas:network_changed", (network) => setNetwork(network));
+      setEventListener("kas:account_changed", () => updateWalletInfo());
+      setEventListener("kas:balance_changed", (balance) => setBalance(balance));
     }
 
     return () => {
