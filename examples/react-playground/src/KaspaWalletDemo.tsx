@@ -2,7 +2,6 @@ import {
   connect,
   disconnect,
   getBalance,
-  getNetwork,
   getPublicKey,
   getWalletAddress,
   isWalletInstalled,
@@ -60,18 +59,22 @@ const KaspaWalletDemo = () => {
 
   // Set up wallet event listeners
   useEffect(() => {
-    if (connected) {
-      setEventListener("kas:network_changed", (network) => setNetwork(network));
-      setEventListener("kas:account_changed", () => updateWalletInfo());
-      setEventListener("kas:balance_changed", (balance) => setBalance(balance));
-    }
+    setEventListener("kas:network_changed", (network) => setNetwork(network));
+    setEventListener("kas:account_changed", (address) => {
+      if (!address) {
+        return;
+      }
+      updateWalletInfo();
+    });
+    setEventListener("kas:balance_changed", (balance) => setBalance(balance));
+    setEventListener("kas:host_connected", (connected) =>
+      setConnected(connected),
+    );
 
     return () => {
-      if (connected) {
-        removeEventListeners();
-      }
+      removeEventListeners();
     };
-  }, [connected]);
+  }, []);
 
   const updateWalletInfo = async () => {
     setLoading(true);
@@ -79,8 +82,12 @@ const KaspaWalletDemo = () => {
 
     try {
       const walletAddress = await getWalletAddress();
-      const pubKey = await getPublicKey();
+      if (!walletAddress) {
+        setConnected(false);
+        return;
+      }
 
+      const pubKey = await getPublicKey();
       setAddress(walletAddress);
       setPublicKey(pubKey);
     } catch (err) {
