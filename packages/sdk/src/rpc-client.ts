@@ -1,6 +1,7 @@
-import init, { Encoding, RpcClient } from "./wasm/kaspa";
+import init, { Encoding, RpcClient, Resolver } from "./wasm/kaspa";
 import { config } from "./config";
 import { getNetwork } from "./index";
+import { sleep } from "./utils";
 
 export let rpcClient: RpcClient | undefined;
 
@@ -10,26 +11,33 @@ export const connectToRPC = async () => {
     await rpcClient.disconnect();
   }
 
-  let networkId = await getNetwork();
+  const networkId = await getNetwork();
 
   rpcClient = new RpcClient({
     url: config.rpcEndpoints[networkId],
     encoding: Encoding.Borsh,
-    networkId: networkId,
+    networkId,
   });
 
   await rpcClient.connect();
 };
 
-export const watchBalanceChanged = (address: string) => {
+const waitForRPCConnected = async () => {
+  while (!rpcClient?.isConnected) {
+    await sleep(100);
+  }
+};
+
+export const watchBalanceChanged = async (address: string) => {
   if (!rpcClient) throw new Error("RPC client is not connected");
 
+  await waitForRPCConnected();
+
   // Emit the initial balance when the account is changed
-  rpcClient.getBalanceByAddress({ address }).then((balanceResponse) => {
-    window.postMessage({
-      id: "kas:balance_changed",
-      response: Number(balanceResponse?.balance ?? 0),
-    });
+  const balanceResponse = await rpcClient.getBalanceByAddress({ address });
+  window.postMessage({
+    id: "kas:balance_changed",
+    response: Number(balanceResponse?.balance ?? 0),
   });
 
   // Remove existing event listeners as it only allows one listener at a time

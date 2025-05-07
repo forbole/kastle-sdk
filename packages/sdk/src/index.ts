@@ -1,8 +1,22 @@
 import { getKaspaProvider } from "./kastle/provider";
-import { createTransactions } from "./wasm/kaspa";
-import { connectToRPC, rpcClient, watchBalanceChanged } from "./rpc-client";
+import {
+  createTransactions,
+  ScriptBuilder,
+  PublicKey,
+  Opcodes,
+  addressFromScriptPublicKey,
+  kaspaToSompi,
+  IUtxoEntry,
+  SighashType,
+} from "./wasm/kaspa";
+import { rpcClient, watchBalanceChanged } from "./rpc-client";
 import { IWalletEventHandler, NetworkId } from "./interfaces";
 import { listeners, ListenerMethod } from "./listener";
+import { sleep } from "./utils";
+
+// ------------------------------------------------------------------------
+// --------------------------Basic functions-------------------------------
+// ------------------------------------------------------------------------
 
 /**
  * Checks if the wallet provider is installed
@@ -66,15 +80,10 @@ export const getNetwork = async (): Promise<NetworkId> => {
 export const switchNetwork = async (
   networkId: NetworkId,
 ): Promise<NetworkId> => {
-  let target = await getKaspaProvider().request(
+  const target: NetworkId = await getKaspaProvider().request(
     "kas:switch_network",
     networkId,
   );
-
-  // Reconnect to the currently selected network
-  if (target) {
-    await connectToRPC();
-  }
 
   return target;
 };
@@ -128,65 +137,6 @@ export const sendKaspa = async (
   });
 };
 
-// TODO ask KaspaCom
-type ProtocolType = "kns" | "krc20" | "krc721";
-// TODO ask KaspaCom
-type PsktActions = string;
-
-/**
- * Signs a PSKT transaction for KRC20/KRC721 transfers
- * @param txJsonString Transaction JSON string
- * @param submit Whether to submit the transaction after signing
- * @param protocol Protocol type
- * @param protocolAction Protocol action
- * @param priorityFee Optional priority fee
- */
-export const signPskt = async (
-  txJsonString: string,
-  submit?: boolean,
-  protocol?: ProtocolType,
-  protocolAction?: PsktActions,
-  priorityFee?: number,
-): Promise<string> => {
-  throw new Error("Not implemented");
-};
-
-// TODO ask KaspaCom, JSON?
-type ProtocolScript = string;
-type CommitRevealOptions = {
-  priorityFee?: number;
-  revealPriorityFee?: number;
-  additionalOutput: Array<{ address: string; amount: number }>;
-  commitTransactionId: string;
-  revealPskt: {
-    outputs: Array<{ address: string; amount: number }>;
-    script: any; // TODO ask KaspaCom
-  };
-};
-
-/**
- * Commits and reveals a transaction, used for minting/listing KRC assets
- * @param actionScript Protocol script for the action
- * @param options Optional commit-reveal options
- */
-export const doCommitReveal = async (
-  actionScript: ProtocolScript,
-  options?: CommitRevealOptions,
-): Promise<string> => {
-  throw new Error("Not implemented");
-};
-
-// TODO ask KaspaCom
-type RevealOptions = any;
-
-/**
- * Performs only the reveal phase of a commit-reveal operation
- * @param options Reveal options
- */
-export const doRevealOnly = async (options: RevealOptions): Promise<string> => {
-  throw new Error("Not implemented");
-};
-
 /**
  * Signs a message using the wallet's private key and returns the signature
  * @param msg Message to sign
@@ -196,10 +146,10 @@ export const signMessage = async (msg: string): Promise<string> => {
 };
 
 /**
- * Retrieves unspent utxo by a address
+ * Retrieves unspent utxo by an address
  * @param address address
  */
-export const getUtxosByAddress = async (address: string): Promise<any[]> => {
+export const getUtxosByAddress = async (address: string) => {
   if (!rpcClient) throw new Error("Unable to reach RPC");
 
   const { entries } = await rpcClient.getUtxosByAddresses({
@@ -209,12 +159,245 @@ export const getUtxosByAddress = async (address: string): Promise<any[]> => {
   return entries;
 };
 
-/**
- * Compounds wallet utxo (optional implementation)
- */
-export const compoundUtxo = async (): Promise<string> => {
-  throw new Error("Not implemented");
+// ------------------------------------------------------------------------
+// --------------------------Script functions------------------------------
+// ------------------------------------------------------------------------
+
+const SIGN_TYPE = {
+  All: SighashType.All,
+  None: SighashType.None,
+  Single: SighashType.Single,
+  AllAnyOneCanPay: SighashType.AllAnyOneCanPay,
+  NoneAnyOneCanPay: SighashType.NoneAnyOneCanPay,
+  SingleAnyOneCanPay: SighashType.SingleAnyOneCanPay,
+} as const;
+
+export type SignType = (typeof SIGN_TYPE)[keyof typeof SIGN_TYPE];
+
+export type ScriptOption = {
+  inputIndex: number;
+  script: ScriptBuilder;
+  signType?: SignType;
 };
+
+/**
+ * Signs a PSKT transaction for KRC20/KRC721 sends
+ * @param txJsonString Transaction JSON string
+ * @param scriptOptions Array of script options for signing
+ */
+export const signPskt = async (
+  txJsonString: string,
+  scriptOptions: ScriptOption[],
+): Promise<string> => {
+  const networkId = await getNetwork();
+  const scripts = scriptOptions.map((scriptOption) => ({
+    inputIndex: scriptOption.inputIndex,
+    scriptHex: scriptOption.script.toString(),
+    signType: scriptOption.signType ?? SIGN_TYPE.All,
+  }));
+
+  const signed = await getKaspaProvider().request("kas:sign_tx", {
+    networkId,
+    txJson: txJsonString,
+    scripts,
+  });
+
+  return signed;
+};
+
+type CommitRevealOptions = {
+  commitPriorityFee?: bigint;
+  revealPriorityFee?: bigint;
+};
+
+/**
+ * Commits and reveals a script, which can be used for minting/listing KRC assets
+ * @param script script to be used for the commit-reveal operation
+ * @param options Optional commit-reveal options
+ */
+export const doCommitReveal = async (
+  script: ScriptBuilder,
+  options?: CommitRevealOptions,
+): Promise<{
+  commitTxId?: string;
+  revealTxId?: string;
+  error?: Error;
+}> => {
+  const result: {
+    commitTxId?: string;
+    revealTxId?: string;
+    error?: Error;
+  } = { commitTxId: undefined, revealTxId: undefined, error: undefined };
+
+  try {
+    const commitTxId = await commitScript(script, options?.commitPriorityFee);
+    result.commitTxId = commitTxId;
+  } catch (error) {
+    result.error = error as Error;
+    return result;
+  }
+
+  try {
+    const revealTxId = await revealScript(
+      result.commitTxId!,
+      script,
+      options?.revealPriorityFee,
+    );
+    return { ...result, revealTxId };
+  } catch (error) {
+    return { ...result, error: error as Error };
+  }
+};
+
+/**
+ * Performs the commit phase of a commit-reveal operation for script
+ * @param script script to be committed
+ * @param priorityFee Optional priority fee for the commit transaction
+ */
+export const commitScript = async (
+  script: ScriptBuilder,
+  priorityFee?: bigint,
+): Promise<string> => {
+  if (!rpcClient) throw new Error("Unable to reach RPC");
+
+  const networkId = await getNetwork();
+
+  // Prepare the property for the commit-reveal operations
+  const address = await getWalletAddress();
+  const scriptAddress = addressFromScriptPublicKey(
+    script.createPayToScriptHashScript(),
+    await getNetwork(),
+  );
+  if (!scriptAddress) {
+    throw new Error("Failed to get script address from script");
+  }
+
+  const { entries } = await rpcClient.getUtxosByAddresses({
+    addresses: [address],
+  });
+
+  const { transactions: commitTransactions } = await createTransactions({
+    changeAddress: address,
+    entries,
+    outputs: [
+      {
+        address: scriptAddress,
+        amount: kaspaToSompi("0.3")!, // 0.3 KAS is the amount for creating a utxo, it can not be lower than 0.2 KAS
+      },
+    ],
+    priorityFee: priorityFee ?? BigInt(0),
+    networkId,
+  });
+
+  const [commitTransaction] = commitTransactions;
+
+  const commitTxId = await getKaspaProvider().request(
+    "kas:sign_and_broadcast_tx",
+    {
+      networkId,
+      txJson: commitTransaction.serializeToSafeJSON(),
+    },
+  );
+
+  return commitTxId;
+};
+
+/**
+ * Performs only the reveal phase of a commit-reveal operation for script
+ * @param commitTxId Transaction ID of the commit transaction
+ * @param script script to be revealed
+ * @param priorityFee Optional priority fee for the reveal transaction
+ */
+export const revealScript = async (
+  commitTxId: string,
+  script: ScriptBuilder,
+  priorityFee?: bigint,
+): Promise<string> => {
+  if (!rpcClient) throw new Error("Unable to reach RPC");
+
+  const scriptAddress = addressFromScriptPublicKey(
+    script.createPayToScriptHashScript(),
+    await getNetwork(),
+  );
+  if (!scriptAddress) {
+    throw new Error("Failed to get script address from script");
+  }
+
+  // Wait for the commit transaction to be confirmed
+  let retryCount = 0;
+  let scriptUtxo: IUtxoEntry | undefined = undefined;
+  while (!scriptUtxo) {
+    if (retryCount > 10) {
+      throw new Error("Timeout: Unable to find the commit script UTXO");
+    }
+
+    const scriptAddressUTXOs = await getUtxosByAddress(
+      scriptAddress.toString(),
+    );
+    scriptUtxo = scriptAddressUTXOs.find(
+      (utxo) => utxo.outpoint.transactionId === commitTxId,
+    );
+    if (!scriptUtxo) {
+      await sleep(1000);
+    }
+    retryCount++;
+  }
+
+  // Reveal the script
+  const { transactions: revealTransactions } = await createTransactions({
+    changeAddress: await getWalletAddress(),
+    priorityEntries: [scriptUtxo],
+    entries: [scriptUtxo],
+    outputs: [],
+    priorityFee: priorityFee ?? BigInt(0),
+  });
+
+  const [revealTransaction] = revealTransactions;
+  const revealTxId = await getKaspaProvider().request(
+    "kas:sign_and_broadcast_tx",
+    {
+      networkId: await getNetwork(),
+      txJson: revealTransaction.serializeToSafeJSON(),
+      scripts: [
+        {
+          inputIndex: 0,
+          scriptHex: script.toString(),
+        },
+      ],
+    },
+  );
+
+  return revealTxId;
+};
+
+/**
+ * Builds a commit-reveal script for a specific protocol and action
+ * @param protocol The protocol name (e.g., "KRC20", "KRC721")
+ * @param protocolAction The action to be performed (e.g., "mint", "list")
+ * @returns The script for the commit-reveal operation
+ */
+export const buildRevealCommitScript = async (
+  protocol: string,
+  protocolAction: string,
+) => {
+  const publicKeyHex = await getPublicKey();
+  const publicKey = new PublicKey(publicKeyHex);
+  const script = new ScriptBuilder()
+    .addData(publicKey.toXOnlyPublicKey().toString())
+    .addOp(Opcodes.OpCheckSig)
+    .addOp(Opcodes.OpFalse)
+    .addOp(Opcodes.OpIf)
+    .addData(new TextEncoder().encode(protocol))
+    .addI64(BigInt(0))
+    .addData(new TextEncoder().encode(protocolAction))
+    .addOp(Opcodes.OpEndIf);
+
+  return script;
+};
+
+// -----------------------------------------------------------------------
+// ----------------------------Listeners----------------------------------
+// -----------------------------------------------------------------------
 
 /**
  * Registers event handler for performing actions when wallet events occur

@@ -80,13 +80,9 @@ const KaspaWalletDemo = () => {
     try {
       const walletAddress = await getWalletAddress();
       const pubKey = await getPublicKey();
-      const currentNetwork = await getNetwork();
 
       setAddress(walletAddress);
       setPublicKey(pubKey);
-      setNetwork(currentNetwork);
-
-      await refreshBalance();
     } catch (err) {
       console.error("Error updating wallet info:", err);
       setError("Failed to update wallet information");
@@ -155,7 +151,6 @@ const KaspaWalletDemo = () => {
 
       if (success) {
         setNetwork(networkId);
-        await refreshBalance();
       } else {
         setError(`Failed to switch to ${networkId}`);
       }
