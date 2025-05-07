@@ -90,7 +90,7 @@ const KaspaWalletDemoDetails = () => {
           </button>
           <button
             onClick={() => handleNetworkSwitch("testnet-10")}
-            disabled={network === "testnet"}
+            disabled={network === "testnet-10"}
             className="bg-purple-500 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded disabled:opacity-50"
           >
             Testnet
