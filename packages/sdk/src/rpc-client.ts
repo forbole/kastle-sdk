@@ -28,10 +28,16 @@ const waitForRPCConnected = async () => {
   }
 };
 
-export const watchBalanceChanged = async (address: string) => {
+export const watchBalanceChanged = async (address: string | null) => {
   if (!rpcClient) throw new Error("RPC client is not connected");
-
   await waitForRPCConnected();
+
+  // Remove existing event listeners as it only allows one listener at a time
+  rpcClient.removeEventListener("utxos-changed");
+
+  if (!address) {
+    return;
+  }
 
   // Emit the initial balance when the account is changed
   const balanceResponse = await rpcClient.getBalanceByAddress({ address });
@@ -40,8 +46,6 @@ export const watchBalanceChanged = async (address: string) => {
     response: Number(balanceResponse?.balance ?? 0),
   });
 
-  // Remove existing event listeners as it only allows one listener at a time
-  rpcClient.removeEventListener("utxos-changed");
   rpcClient.subscribeUtxosChanged([address]);
   rpcClient.addEventListener("utxos-changed", async (event) => {
     const balanceResponse = await rpcClient?.getBalanceByAddress({ address });

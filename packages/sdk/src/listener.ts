@@ -1,5 +1,6 @@
 import { IWalletEventHandler } from "./interfaces";
 import { watchBalanceChanged, connectToRPC } from "./rpc-client";
+import { getWalletAddress } from "./index";
 
 export const listeners = {
   "kas:network_changed": new Set<IWalletEventHandler>(),
@@ -19,11 +20,11 @@ window.addEventListener("message", async (event) => {
   }
 
   if (event.data?.id === "kas:account_changed") {
-    const address = event.data.response;
-    if (address) {
-      watchBalanceChanged(address);
-    }
-
+    let address: string | null = null;
+    try {
+      address = await getWalletAddress();
+    } catch (error) {}
+    watchBalanceChanged(address);
     for (const listener of listeners["kas:account_changed"]) {
       listener(address);
     }
