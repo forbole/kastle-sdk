@@ -177,8 +177,7 @@ export const buildTransaction = async (
   payload?: string,
 ) => {
   const transaction = createTransaction(entries, outputs, BigInt(0), payload);
-  const txJson = transaction.serializeToSafeJSON();
-  return txJson;
+  return transaction.serializeToSafeJSON();
 };
 
 /**
@@ -236,12 +235,6 @@ export const sendTransactionWithExtraOutputs = async (
     changeAmount = inputsBalance - totalOutputsBalance;
   }
 
-  // Add change output to the transaction
-  transaction.outputs.push({
-    scriptPublicKey: payToAddressScript(await getWalletAddress()),
-    value: changeAmount,
-  });
-
   // Add extra outputs to the transaction
   transaction.outputs.push(
     ...extraOutputs.map((output) => ({
@@ -249,6 +242,12 @@ export const sendTransactionWithExtraOutputs = async (
       value: output.value,
     })),
   );
+
+  // Add change output to the transaction
+  transaction.outputs.push({
+    scriptPublicKey: payToAddressScript(await getWalletAddress()),
+    value: changeAmount,
+  });
 
   const txId = await getKaspaProvider().request("kas:sign_and_broadcast_tx", {
     networkId: await getNetwork(),
@@ -431,18 +430,15 @@ export const revealScript = async (
   let scriptUtxo: IUtxoEntry | undefined = undefined;
   while (!scriptUtxo) {
     if (retryCount > 10) {
-      throw new Error("Timeout: Unable to find the commit script UTXO");
+      throw new Error("Commit transaction not confirmed in time");
     }
 
-    const scriptAddressUTXOs = await getUtxosByAddress(
-      scriptAddress.toString(),
-    );
-    scriptUtxo = scriptAddressUTXOs.find(
-      (utxo) => utxo.outpoint.transactionId === commitTxId,
-    );
-    if (!scriptUtxo) {
-      await sleep(1000);
+    scriptUtxo = await getCommitScriptUtxo(script, commitTxId);
+    if (scriptUtxo) {
+      break;
     }
+
+    await sleep(1000); // Wait for 1 second before retrying
     retryCount++;
   }
 
@@ -475,15 +471,16 @@ export const revealScript = async (
 
 /**
  * Builds a commit-reveal script for a specific protocol and action
+ * @param publicKeyHex The public key in hex format to have permission to reveal the script
  * @param protocol The protocol name (e.g., "KRC20", "KRC721")
  * @param protocolAction The action to be performed (e.g., "mint", "list")
  * @returns The script for the commit-reveal operation
  */
 export const buildRevealCommitScript = async (
+  publicKeyHex: string,
   protocol: string,
   protocolAction: string,
 ) => {
-  const publicKeyHex = await getPublicKey();
   const publicKey = new PublicKey(publicKeyHex);
   const script = new ScriptBuilder()
     .addData(publicKey.toXOnlyPublicKey().toString())
@@ -496,6 +493,33 @@ export const buildRevealCommitScript = async (
     .addOp(Opcodes.OpEndIf);
 
   return script;
+};
+
+/**
+ * Retrieves the UTXO for a given commit transaction ID
+ * @param script The script that was used for the commit transaction
+ * @param commitTxId The transaction ID of the commit transaction
+ * @returns The UTXO entry associated with the commit transaction ID for the script
+ */
+export const getCommitScriptUtxo = async (
+  script: ScriptBuilder,
+  commitTxId: string,
+) => {
+  if (!rpcClient) throw new Error("Unable to reach RPC");
+
+  const scriptAddress = addressFromScriptPublicKey(
+    script.createPayToScriptHashScript(),
+    await getNetwork(),
+  );
+  if (!scriptAddress) {
+    throw new Error("Failed to get script address from script");
+  }
+
+  const scriptAddressUTXOs = await getUtxosByAddress(scriptAddress.toString());
+
+  return scriptAddressUTXOs.find(
+    (utxo) => utxo.outpoint.transactionId === commitTxId,
+  );
 };
 
 // -----------------------------------------------------------------------
@@ -522,4 +546,16 @@ export const removeEventListeners = (): void => {
     const typedMethod = method as ListenerMethod;
     listeners[typedMethod].clear();
   }
+};
+
+/**
+ * Removes a specific event listener
+ * @param method Event method (e.g., "kas:network_changed", "kas:account_changed" or "kas:balance_changed")
+ * @param handler Event handler
+ */
+export const removeEventListener = (
+  method: ListenerMethod,
+  handler: IWalletEventHandler,
+): void => {
+  listeners[method].delete(handler);
 };
