@@ -83,7 +83,8 @@ const KaspaWalletDemo = () => {
     try {
       const walletAddress = await getWalletAddress();
       if (!walletAddress) {
-        setConnected(false);
+        setAddress(""); 
+        setPublicKey("");
         return;
       }
 

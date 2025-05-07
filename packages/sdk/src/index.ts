@@ -8,6 +8,10 @@ import {
   kaspaToSompi,
   IUtxoEntry,
   SighashType,
+  IPaymentOutput,
+  createTransaction,
+  Transaction,
+  payToAddressScript,
 } from "./wasm/kaspa";
 import { rpcClient, watchBalanceChanged } from "./rpc-client";
 import { IWalletEventHandler, NetworkId } from "./interfaces";
@@ -159,6 +163,101 @@ export const getUtxosByAddress = async (address: string) => {
   return entries;
 };
 
+/**
+ * Creates a transaction with the given inputs and outputs, NOTE: please add the change output manually
+ * @param entries UTXO entries to be used as inputs
+ * @param outputs Payment outputs to be included in the transaction
+ * @param priorityFee Optional priority fee for the transaction
+ * @param payload Optional payload for the transaction
+ * @return Serialized transaction JSON string
+ */
+export const buildTransaction = async (
+  entries: IUtxoEntry[],
+  outputs: IPaymentOutput[],
+  payload?: string,
+) => {
+  const transaction = createTransaction(entries, outputs, BigInt(0), payload);
+  const txJson = transaction.serializeToSafeJSON();
+  return txJson;
+};
+
+/**
+ * Sends a transaction with extra outputs
+ * @param txJson Transaction JSON string
+ * @param extraOutputs Extra outputs to be added to the transaction
+ * @param priorityFee Priority fee for the transaction
+ * @return Transaction ID of the sent transaction
+ */
+export const sendTransactionWithExtraOutputs = async (
+  txJson: string,
+  extraOutputs: { address: string; value: bigint }[],
+  priorityFee: bigint,
+) => {
+  const senderUtxos = await getUtxosByAddress(await getWalletAddress());
+  const transaction = Transaction.deserializeFromSafeJSON(txJson);
+
+  let inputsBalance = transaction.inputs.reduce(
+    (acc, input) => acc + (input.utxo?.amount ?? BigInt(0)),
+    BigInt(0),
+  );
+
+  const outputsBalance = transaction.outputs.reduce(
+    (acc, output) => acc + output.value,
+    BigInt(0),
+  );
+
+  const extraOutputsBalance = extraOutputs.reduce(
+    (acc, output) => acc + output.value,
+    BigInt(0),
+  );
+
+  const totalOutputsBalance =
+    outputsBalance + extraOutputsBalance + priorityFee;
+
+  // Add inputs to the transaction until the balance is sufficient
+  let changeAmount = inputsBalance - totalOutputsBalance;
+  while (
+    inputsBalance < totalOutputsBalance ||
+    (changeAmount !== BigInt(0) && changeAmount <= kaspaToSompi("0.2")!)
+  ) {
+    const inputUtxo = senderUtxos.pop();
+    if (!inputUtxo) {
+      throw new Error("Not enough UTXOs to cover the transaction fee");
+    }
+
+    transaction.inputs.push({
+      previousOutpoint: inputUtxo.outpoint,
+      sequence: BigInt(0),
+      sigOpCount: 1,
+      utxo: inputUtxo,
+    });
+
+    inputsBalance += inputUtxo.amount;
+    changeAmount = inputsBalance - totalOutputsBalance;
+  }
+
+  // Add change output to the transaction
+  transaction.outputs.push({
+    scriptPublicKey: payToAddressScript(await getWalletAddress()),
+    value: changeAmount,
+  });
+
+  // Add extra outputs to the transaction
+  transaction.outputs.push(
+    ...extraOutputs.map((output) => ({
+      scriptPublicKey: payToAddressScript(output.address),
+      value: output.value,
+    })),
+  );
+
+  const txId = await getKaspaProvider().request("kas:sign_and_broadcast_tx", {
+    networkId: await getNetwork(),
+    txJson: transaction.serializeToSafeJSON(),
+  });
+
+  return txId;
+};
+
 // ------------------------------------------------------------------------
 // --------------------------Script functions------------------------------
 // ------------------------------------------------------------------------
@@ -184,6 +283,7 @@ export type ScriptOption = {
  * Signs a PSKT transaction for KRC20/KRC721 sends
  * @param txJsonString Transaction JSON string
  * @param scriptOptions Array of script options for signing
+ * @return Signed transaction JSON string
  */
 export const signPskt = async (
   txJsonString: string,
@@ -214,6 +314,7 @@ type CommitRevealOptions = {
  * Commits and reveals a script, which can be used for minting/listing KRC assets
  * @param script script to be used for the commit-reveal operation
  * @param options Optional commit-reveal options
+ * @return An object containing the commit and reveal transaction IDs, or an error if one occurred
  */
 export const doCommitReveal = async (
   script: ScriptBuilder,
@@ -253,6 +354,7 @@ export const doCommitReveal = async (
  * Performs the commit phase of a commit-reveal operation for script
  * @param script script to be committed
  * @param priorityFee Optional priority fee for the commit transaction
+ * @return Transaction ID of the commit transaction
  */
 export const commitScript = async (
   script: ScriptBuilder,
@@ -307,6 +409,7 @@ export const commitScript = async (
  * @param commitTxId Transaction ID of the commit transaction
  * @param script script to be revealed
  * @param priorityFee Optional priority fee for the reveal transaction
+ * @return Transaction ID of the reveal transaction
  */
 export const revealScript = async (
   commitTxId: string,
