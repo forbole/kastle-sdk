@@ -8,8 +8,8 @@ import {
 import { useEffect, useState } from "react";
 
 export default function useAccount() {
-  const [address, setAddress] = useState<string | null>(null);
-  const [publicKey, setPublicKey] = useState<string | null>(null);
+  const [address, setAddress] = useState<string>();
+  const [publicKey, setPublicKey] = useState<string>();
 
   const updateAccount = async () => {
     const address = await getWalletAddress();
@@ -24,7 +24,13 @@ export default function useAccount() {
   }, []);
 
   useEffect(() => {
-    const handler = async () => {
+    const handler = async (address: string | null) => {
+      if (!address) {
+        setAddress(undefined);
+        setPublicKey(undefined);
+        return;
+      }
+
       updateAccount();
     };
 

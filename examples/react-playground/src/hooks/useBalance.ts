@@ -3,7 +3,7 @@ import {
   setEventListener,
   removeEventListener,
 } from "@forbole/kastle-sdk";
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState } from "react";
 
 export default function useBalance() {
   const [balance, setBalance] = useState(0);
