@@ -36,6 +36,8 @@ const KaspaWalletDemo = () => {
       if (checkWalletInstallation()) {
         clearInterval(intervalId);
       }
+
+      checkTime++;
     }, 200); // Check every 200ms
 
     // Clean up interval on component unmount
