@@ -17,6 +17,7 @@ import { rpcClient, watchBalanceChanged } from "./rpc-client";
 import { IWalletEventHandler, NetworkId } from "./interfaces";
 import { listeners, ListenerMethod } from "./listener";
 import { sleep } from "./utils";
+import * as wasm from "./wasm/kaspa";
 
 // ------------------------------------------------------------------------
 // --------------------------Basic functions-------------------------------
@@ -171,7 +172,7 @@ export const getUtxosByAddress = async (address: string) => {
  * @param payload Optional payload for the transaction
  * @return Serialized transaction JSON string
  */
-export const buildTransaction = async (
+export const buildTransaction = (
   entries: IUtxoEntry[],
   outputs: IPaymentOutput[],
   payload?: string,
@@ -224,30 +225,37 @@ export const sendTransactionWithExtraOutputs = async (
       throw new Error("Not enough UTXOs to cover the transaction fee");
     }
 
-    transaction.inputs.push({
-      previousOutpoint: inputUtxo.outpoint,
-      sequence: BigInt(0),
-      sigOpCount: 1,
-      utxo: inputUtxo,
-    });
+    transaction.inputs = [
+      ...transaction.inputs,
+      {
+        previousOutpoint: inputUtxo.outpoint,
+        sequence: BigInt(0),
+        sigOpCount: 1,
+        utxo: inputUtxo,
+      },
+    ];
 
     inputsBalance += inputUtxo.amount;
     changeAmount = inputsBalance - totalOutputsBalance;
   }
 
   // Add extra outputs to the transaction
-  transaction.outputs.push(
+  transaction.outputs = [
+    ...transaction.outputs,
     ...extraOutputs.map((output) => ({
       scriptPublicKey: payToAddressScript(output.address),
       value: output.value,
     })),
-  );
+  ];
 
   // Add change output to the transaction
-  transaction.outputs.push({
-    scriptPublicKey: payToAddressScript(await getWalletAddress()),
-    value: changeAmount,
-  });
+  transaction.outputs = [
+    ...transaction.outputs,
+    {
+      scriptPublicKey: payToAddressScript(await getWalletAddress()),
+      value: changeAmount,
+    },
+  ];
 
   const txId = await getKaspaProvider().request("kas:sign_and_broadcast_tx", {
     networkId: await getNetwork(),
@@ -261,20 +269,18 @@ export const sendTransactionWithExtraOutputs = async (
 // --------------------------Script functions------------------------------
 // ------------------------------------------------------------------------
 
-const SIGN_TYPE = {
-  All: SighashType.All,
-  None: SighashType.None,
-  Single: SighashType.Single,
-  AllAnyOneCanPay: SighashType.AllAnyOneCanPay,
-  NoneAnyOneCanPay: SighashType.NoneAnyOneCanPay,
-  SingleAnyOneCanPay: SighashType.SingleAnyOneCanPay,
-} as const;
-
-export type SignType = (typeof SIGN_TYPE)[keyof typeof SIGN_TYPE];
+export enum SignType {
+  All = "All",
+  None = "None",
+  Single = "Single",
+  AllAnyOneCanPay = "AllAnyOneCanPay",
+  NoneAnyOneCanPay = "NoneAnyOneCanPay",
+  SingleAnyOneCanPay = "SingleAnyOneCanPay",
+}
 
 export type ScriptOption = {
   inputIndex: number;
-  script: ScriptBuilder;
+  script?: ScriptBuilder;
   signType?: SignType;
 };
 
@@ -286,13 +292,13 @@ export type ScriptOption = {
  */
 export const signPskt = async (
   txJsonString: string,
-  scriptOptions: ScriptOption[],
+  scriptOptions?: ScriptOption[],
 ): Promise<string> => {
   const networkId = await getNetwork();
-  const scripts = scriptOptions.map((scriptOption) => ({
+  const scripts = scriptOptions?.map((scriptOption) => ({
     inputIndex: scriptOption.inputIndex,
-    scriptHex: scriptOption.script.toString(),
-    signType: scriptOption.signType ?? SIGN_TYPE.All,
+    scriptHex: scriptOption.script?.toString(),
+    signType: scriptOption.signType ?? SignType.All,
   }));
 
   const signed = await getKaspaProvider().request("kas:sign_tx", {
@@ -383,7 +389,7 @@ export const commitScript = async (
     outputs: [
       {
         address: scriptAddress,
-        amount: kaspaToSompi("0.3")!, // 0.3 KAS is the amount for creating a utxo, it can not be lower than 0.2 KAS
+        amount: kaspaToSompi("0.2")!, // 0.2 KAS is the minimum amount for creating a utxo
       },
     ],
     priorityFee: priorityFee ?? BigInt(0),
@@ -449,6 +455,7 @@ export const revealScript = async (
     entries: [scriptUtxo],
     outputs: [],
     priorityFee: priorityFee ?? BigInt(0),
+    networkId: await getNetwork(),
   });
 
   const [revealTransaction] = revealTransactions;
@@ -472,11 +479,11 @@ export const revealScript = async (
 /**
  * Builds a commit-reveal script for a specific protocol and action
  * @param publicKeyHex The public key in hex format to have permission to reveal the script
- * @param protocol The protocol name (e.g., "KRC20", "KRC721")
+ * @param protocol The protocol name (e.g., "kasplex", "kspr", "kns")
  * @param protocolAction The action to be performed (e.g., "mint", "list")
  * @returns The script for the commit-reveal operation
  */
-export const buildRevealCommitScript = async (
+export const buildRevealCommitScript = (
   publicKeyHex: string,
   protocol: string,
   protocolAction: string,
@@ -559,3 +566,5 @@ export const removeEventListener = (
 ): void => {
   listeners[method].delete(handler);
 };
+
+export const kaspaWasm = wasm;

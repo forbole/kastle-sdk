@@ -20,10 +20,7 @@ window.addEventListener("message", async (event) => {
   }
 
   if (event.data?.id === "kas:account_changed") {
-    let address: string | null = null;
-    try {
-      address = await getWalletAddress();
-    } catch (error) {}
+    const address = event.data.response;
     watchBalanceChanged(address);
     for (const listener of listeners["kas:account_changed"]) {
       listener(address);
