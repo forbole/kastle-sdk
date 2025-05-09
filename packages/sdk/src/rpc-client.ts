@@ -22,6 +22,7 @@ export const connectToRPC = async () => {
   await rpcClient.connect();
 };
 
+// TODO: have a better way to handle rpc client connection
 const waitForRPCConnected = async () => {
   while (!rpcClient?.isConnected) {
     await sleep(100);
