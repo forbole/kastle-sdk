@@ -21,7 +21,7 @@ export const getKaspaProvider = (): KaspaProvider => {
   let kastleBrowserAPI = kastleProvider;
 
   if (!kastleBrowserAPI) {
-    kastleBrowserAPI = (window as any).kastle;
+    throw new Error("Kastle wallet not installed");
   }
 
   return kastleBrowserAPI;
