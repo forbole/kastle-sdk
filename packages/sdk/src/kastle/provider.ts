@@ -1,10 +1,4 @@
-export type NetworkId = "mainnet" | "testnet-10";
-
-export interface KaspaProvider {
-  connect: (networkId: NetworkId) => Promise<boolean>;
-  disconnect: () => Promise<void>;
-  request: (method: string, args?: any) => Promise<any>;
-}
+import { KaspaProvider } from "../interfaces";
 
 declare global {
   interface Window {
@@ -14,7 +8,7 @@ declare global {
 
 let kastleProvider: KaspaProvider;
 
-let kastleInstallListener = async (event: MessageEvent<any>) => {
+const kastleInstallListener = async (event: MessageEvent<any>) => {
   if (event.data?.id === "kastle_installed") {
     kastleProvider = (window as any).kastle;
     window.removeEventListener("message", kastleInstallListener);
@@ -27,7 +21,9 @@ export const getKaspaProvider = (): KaspaProvider => {
   let kastleBrowserAPI = kastleProvider;
 
   if (!kastleBrowserAPI) {
-    throw new Error("Kastle wallet not installed");
+    throw new Error(
+      "Kastle wallet not installed or needs some time to get injected",
+    );
   }
 
   return kastleBrowserAPI;
