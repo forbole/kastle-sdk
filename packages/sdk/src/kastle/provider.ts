@@ -2,29 +2,24 @@ import { KaspaProvider } from "../interfaces";
 
 declare global {
   interface Window {
-    kaspaProvider: KaspaProvider;
+    kastle: KaspaProvider;
   }
 }
 
-let kastleProvider: KaspaProvider;
+export const getKaspaProvider = async (): Promise<KaspaProvider> => {
+  return new Promise((resolve, reject) => {
+    const interval = setInterval(() => {
+      const kastleProvider = window.kastle;
+      if (kastleProvider) {
+        clearInterval(interval);
+        clearTimeout(timeout);
+        resolve(kastleProvider);
+      }
+    }, 100);
 
-const kastleInstallListener = async (event: MessageEvent<any>) => {
-  if (event.data?.id === "kastle_installed") {
-    kastleProvider = (window as any).kastle;
-    window.removeEventListener("message", kastleInstallListener);
-  }
-};
-
-window.addEventListener("message", kastleInstallListener);
-
-export const getKaspaProvider = (): KaspaProvider => {
-  let kastleBrowserAPI = kastleProvider;
-
-  if (!kastleBrowserAPI) {
-    throw new Error(
-      "Kastle wallet not installed or needs some time to get injected",
-    );
-  }
-
-  return kastleBrowserAPI;
+    const timeout = setTimeout(() => {
+      clearInterval(interval);
+      reject(new Error("Kastle provider not found"));
+    }, 5000);
+  });
 };

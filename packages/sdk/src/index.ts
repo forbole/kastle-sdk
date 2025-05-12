@@ -26,9 +26,9 @@ import * as wasm from "./wasm/kaspa";
 /**
  * Checks if the wallet provider is installed
  */
-export const isWalletInstalled = (): boolean => {
+export const isWalletInstalled = async (): Promise<boolean> => {
   try {
-    getKaspaProvider();
+    await getKaspaProvider();
     return true;
   } catch (_) {
     return false;
@@ -39,14 +39,14 @@ export const isWalletInstalled = (): boolean => {
  * Disconnects the wallet from the platform
  */
 export const disconnect = async (): Promise<void> => {
-  return getKaspaProvider().disconnect();
+  return (await getKaspaProvider()).disconnect();
 };
 
 /**
  * Connect the wallet for the platform
  */
 export const connect = async (): Promise<boolean> => {
-  const connected = await getKaspaProvider().connect();
+  const connected = await (await getKaspaProvider()).connect();
   watchBalanceChanged(await getWalletAddress());
   return connected;
 };
@@ -55,8 +55,9 @@ export const connect = async (): Promise<boolean> => {
  * Returns the currently connected wallet address
  */
 export const getWalletAddress = async (): Promise<string> => {
-  let account: { address: string; publicKey: string } =
-    await getKaspaProvider().request("kas:get_account");
+  let account: { address: string; publicKey: string } = await (
+    await getKaspaProvider()
+  ).request("kas:get_account");
 
   return account.address;
 };
@@ -65,8 +66,9 @@ export const getWalletAddress = async (): Promise<string> => {
  * Retrieves the public key associated with the wallet
  */
 export const getPublicKey = async (): Promise<string> => {
-  let account: { address: string; publicKey: string } =
-    await getKaspaProvider().request("kas:get_account");
+  let account: { address: string; publicKey: string } = await (
+    await getKaspaProvider()
+  ).request("kas:get_account");
 
   return account.publicKey;
 };
@@ -75,7 +77,7 @@ export const getPublicKey = async (): Promise<string> => {
  * Returns the active Kaspa network (mainnet, testnet)
  */
 export const getNetwork = async (): Promise<NetworkId> => {
-  return getKaspaProvider().request("kas:get_network");
+  return await (await getKaspaProvider()).request("kas:get_network");
 };
 
 /**
@@ -85,10 +87,9 @@ export const getNetwork = async (): Promise<NetworkId> => {
 export const switchNetwork = async (
   networkId: NetworkId,
 ): Promise<NetworkId> => {
-  const target: NetworkId = await getKaspaProvider().request(
-    "kas:switch_network",
-    networkId,
-  );
+  const target: NetworkId = await (
+    await getKaspaProvider()
+  ).request("kas:switch_network", networkId);
 
   return target;
 };
@@ -136,7 +137,7 @@ export const sendKaspa = async (
 
   const [transaction] = transactions;
 
-  return getKaspaProvider().request("kas:sign_and_broadcast_tx", {
+  return (await getKaspaProvider()).request("kas:sign_and_broadcast_tx", {
     networkId: await getNetwork(),
     txJson: transaction.serializeToSafeJSON(),
   });
@@ -147,7 +148,7 @@ export const sendKaspa = async (
  * @param msg Message to sign
  */
 export const signMessage = async (msg: string): Promise<string> => {
-  return await getKaspaProvider().request("kas:sign_message", msg);
+  return await (await getKaspaProvider()).request("kas:sign_message", msg);
 };
 
 /**
@@ -257,7 +258,9 @@ export const sendTransactionWithExtraOutputs = async (
     },
   ];
 
-  const txId = await getKaspaProvider().request("kas:sign_and_broadcast_tx", {
+  const txId = await (
+    await getKaspaProvider()
+  ).request("kas:sign_and_broadcast_tx", {
     networkId: await getNetwork(),
     txJson: transaction.serializeToSafeJSON(),
   });
@@ -301,7 +304,9 @@ export const signPskt = async (
     signType: scriptOption.signType ?? SignType.All,
   }));
 
-  const signed = await getKaspaProvider().request("kas:sign_tx", {
+  const signed = await (
+    await getKaspaProvider()
+  ).request("kas:sign_tx", {
     networkId,
     txJson: txJsonString,
     scripts,
@@ -398,13 +403,12 @@ export const commitScript = async (
 
   const [commitTransaction] = commitTransactions;
 
-  const commitTxId = await getKaspaProvider().request(
-    "kas:sign_and_broadcast_tx",
-    {
-      networkId,
-      txJson: commitTransaction.serializeToSafeJSON(),
-    },
-  );
+  const commitTxId = await (
+    await getKaspaProvider()
+  ).request("kas:sign_and_broadcast_tx", {
+    networkId,
+    txJson: commitTransaction.serializeToSafeJSON(),
+  });
 
   return commitTxId;
 };
@@ -459,19 +463,18 @@ export const revealScript = async (
   });
 
   const [revealTransaction] = revealTransactions;
-  const revealTxId = await getKaspaProvider().request(
-    "kas:sign_and_broadcast_tx",
-    {
-      networkId: await getNetwork(),
-      txJson: revealTransaction.serializeToSafeJSON(),
-      scripts: [
-        {
-          inputIndex: 0,
-          scriptHex: script.toString(),
-        },
-      ],
-    },
-  );
+  const revealTxId = await (
+    await getKaspaProvider()
+  ).request("kas:sign_and_broadcast_tx", {
+    networkId: await getNetwork(),
+    txJson: revealTransaction.serializeToSafeJSON(),
+    scripts: [
+      {
+        inputIndex: 0,
+        scriptHex: script.toString(),
+      },
+    ],
+  });
 
   return revealTxId;
 };
