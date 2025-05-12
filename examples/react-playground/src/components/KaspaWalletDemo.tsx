@@ -13,9 +13,9 @@ const KaspaWalletDemo = () => {
 
   // Check if wallet is installed on mount
   useEffect(() => {
-    const checkWalletInstallation = () => {
+    const checkWalletInstallation = async () => {
       try {
-        const installed = isWalletInstalled();
+        const installed = await isWalletInstalled();
         setWalletInstalled(installed);
         return installed;
       } catch (error) {
@@ -23,25 +23,7 @@ const KaspaWalletDemo = () => {
       }
     };
 
-    if (walletInstalled) return;
-
-    // Set up polling if not loaded yet
-    let checkTime = 0;
-    const intervalId = setInterval(() => {
-      if (checkTime > 10) {
-        clearInterval(intervalId);
-        return;
-      }
-
-      if (checkWalletInstallation()) {
-        clearInterval(intervalId);
-      }
-
-      checkTime++;
-    }, 200); // Check every 200ms
-
-    // Clean up interval on component unmount
-    return () => clearInterval(intervalId);
+    checkWalletInstallation();
   }, []);
 
   return (
