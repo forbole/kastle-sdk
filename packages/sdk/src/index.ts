@@ -97,11 +97,11 @@ export const switchNetwork = async (
 /**
  * Fetches the current balance of the wallet
  */
-export const getBalance = async (): Promise<number> => {
+export const getBalance = async (): Promise<bigint> => {
   const address = await getWalletAddress();
   const response = await rpcClient?.getBalanceByAddress({ address });
 
-  return parseInt(response?.balance?.toString() ?? "0", 10);
+  return response?.balance ?? BigInt(0);
 };
 
 /**
@@ -112,8 +112,8 @@ export const getBalance = async (): Promise<number> => {
  */
 export const sendKaspa = async (
   toAddress: string,
-  amountSompi: number,
-  options?: { priorityFee?: number },
+  amountSompi: bigint,
+  options?: { priorityFee?: bigint },
 ): Promise<string> => {
   if (!rpcClient) throw new Error("Unable to reach RPC");
 
@@ -128,10 +128,10 @@ export const sendKaspa = async (
     outputs: [
       {
         address: toAddress,
-        amount: BigInt(amountSompi),
+        amount: amountSompi,
       },
     ],
-    priorityFee: BigInt(options?.priorityFee ?? 0),
+    priorityFee: options?.priorityFee ?? BigInt(0),
     networkId: await getNetwork(),
   });
 

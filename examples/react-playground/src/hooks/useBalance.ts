@@ -6,7 +6,7 @@ import {
 import { useEffect, useState } from "react";
 
 export default function useBalance() {
-  const [balance, setBalance] = useState(0);
+  const [balance, setBalance] = useState(BigInt(0));
   const [error, setError] = useState<string | null>(null);
 
   const refreshBalance = async () => {
@@ -24,7 +24,7 @@ export default function useBalance() {
   }, []);
 
   useEffect(() => {
-    const handler = async (balance: number) => {
+    const handler = async (balance: bigint) => {
       setBalance(balance);
     };
 
