@@ -24,12 +24,11 @@ export default function KaspaWalletDemoDetails() {
     }
     try {
       // Convert amount from KAS to sompi (1 KAS = 100,000,000 sompi)
-      const amountSompi = Math.floor(parseFloat(amount) * 100000000);
-      const priorityFeeSompi = priorityFee
-        ? Math.floor(parseFloat(priorityFee) * 100000000)
-        : 0;
+      const amountSompi = sdk.kaspaWasm.kaspaToSompi(amount) ?? BigInt(0);
+      const priorityFeeSompi =
+        sdk.kaspaWasm.kaspaToSompi(priorityFee) ?? BigInt(0);
 
-      await sendTransaction(recipient, BigInt(amountSompi), BigInt(priorityFeeSompi));
+      await sendTransaction(recipient, amountSompi, priorityFeeSompi);
     } catch (err: any) {
       console.error("Error sending transaction:", err);
     }
