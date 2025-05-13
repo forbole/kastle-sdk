@@ -8,8 +8,8 @@ export default function useSend() {
 
   const sendTransaction = async (
     address: string,
-    amount: number,
-    priorityFee?: number,
+    amount: bigint,
+    priorityFee?: bigint,
   ) => {
     try {
       if (isSending) {

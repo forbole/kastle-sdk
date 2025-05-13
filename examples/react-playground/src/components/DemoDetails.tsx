@@ -5,6 +5,7 @@ import useBalance from "../hooks/useBalance";
 import useSend from "../hooks/useSend";
 import CommitRevealDemo from "./CommitRevealDemo";
 import SignPSKTDemo from "./SignPSKTDemo";
+import * as sdk from "@forbole/kastle-sdk";
 
 export default function KaspaWalletDemoDetails() {
   const { address, publicKey } = useAccount();
@@ -23,10 +24,9 @@ export default function KaspaWalletDemoDetails() {
     }
     try {
       // Convert amount from KAS to sompi (1 KAS = 100,000,000 sompi)
-      const amountSompi = Math.floor(parseFloat(amount) * 100000000);
-      const priorityFeeSompi = priorityFee
-        ? Math.floor(parseFloat(priorityFee) * 100000000)
-        : 0;
+      const amountSompi = sdk.kaspaWasm.kaspaToSompi(amount) ?? BigInt(0);
+      const priorityFeeSompi =
+        sdk.kaspaWasm.kaspaToSompi(priorityFee) ?? BigInt(0);
 
       await sendTransaction(recipient, amountSompi, priorityFeeSompi);
     } catch (err: any) {
@@ -35,8 +35,8 @@ export default function KaspaWalletDemoDetails() {
   };
 
   // Format balance from sompi to KAS (1 KAS = 100,000,000 sompi)
-  const formatBalance = (sompiAmount: number) => {
-    return (sompiAmount / 100000000).toFixed(8);
+  const formatBalance = (sompiAmount: bigint) => {
+    return sdk.kaspaWasm.sompiToKaspaString(sompiAmount);
   };
 
   return (
