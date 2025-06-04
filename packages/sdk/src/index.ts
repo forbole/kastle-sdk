@@ -183,8 +183,22 @@ export const buildTransaction = (
 };
 
 /**
+ * Sends a transaction with the given inputs and outputs
+ * @param txJson Transaction safe-serialized JSON string
+ * @return Transaction ID of the sent transaction
+ */
+export const sendTransaction = async (txJson: string): Promise<string> => {
+  return await (
+    await getKaspaProvider()
+  ).request("kas:sign_and_broadcast_tx", {
+    networkId: await getNetwork(),
+    txJson,
+  });
+};
+
+/**
  * Sends a transaction with extra outputs
- * @param txJson Transaction JSON string
+ * @param txJson Transaction safe-serialized JSON string
  * @param extraOutputs Extra outputs to be added to the transaction
  * @param priorityFee Priority fee for the transaction
  * @return Transaction ID of the sent transaction
@@ -265,7 +279,7 @@ export const sendTransactionWithExtraOutputs = async (
     txJson: transaction.serializeToSafeJSON(),
   });
 
-  return txId;
+  return sendTransaction(txId);
 };
 
 // ------------------------------------------------------------------------
@@ -288,13 +302,13 @@ export type ScriptOption = {
 };
 
 /**
- * Signs a PSKT transaction for KRC20/KRC721 sends
- * @param txJsonString Transaction JSON string
+ * Signs a PSKT transaction
+ * @param txJson Transaction safe-serialized JSON string
  * @param scriptOptions Array of script options for signing
  * @return Signed transaction JSON string
  */
 export const signPskt = async (
-  txJsonString: string,
+  txJson: string,
   scriptOptions?: ScriptOption[],
 ): Promise<string> => {
   const networkId = await getNetwork();
@@ -308,7 +322,7 @@ export const signPskt = async (
     await getKaspaProvider()
   ).request("kas:sign_tx", {
     networkId,
-    txJson: txJsonString,
+    txJson: txJson,
     scripts,
   });
 
