@@ -1,4 +1,4 @@
-import init, { Encoding, RpcClient, Resolver } from "./wasm/kaspa";
+import init, { Encoding, RpcClient } from "./wasm/kaspa";
 import { config } from "./config";
 import { getNetwork } from "./index";
 import { sleep } from "./utils";

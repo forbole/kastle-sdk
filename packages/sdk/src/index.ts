@@ -7,7 +7,6 @@ import {
   addressFromScriptPublicKey,
   kaspaToSompi,
   IUtxoEntry,
-  SighashType,
   IPaymentOutput,
   createTransaction,
   Transaction,

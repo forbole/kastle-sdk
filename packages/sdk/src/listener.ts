@@ -1,6 +1,5 @@
 import { IWalletEventHandler } from "./interfaces";
 import { watchBalanceChanged, connectToRPC } from "./rpc-client";
-import { getWalletAddress } from "./index";
 
 export const listeners = {
   "kas:network_changed": new Set<IWalletEventHandler>(),
