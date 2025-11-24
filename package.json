@@ -1,6 +1,6 @@
 {
   "name": "@forbole/kastle-sdk-monorepo",
-  "version": "1.0.0",
+  "version": "1.12.1",
   "workspaces": [
     "packages/*",
     "examples/*"
