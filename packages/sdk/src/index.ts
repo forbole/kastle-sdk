@@ -12,7 +12,7 @@ import {
   Transaction,
   payToAddressScript,
 } from "./wasm/kaspa";
-import { rpcClient, watchBalanceChanged } from "./rpc-client";
+import { rpcClient, watchBalanceChanged, wasmReady } from "./rpc-client";
 import { IWalletEventHandler, NetworkId } from "./interfaces";
 import { listeners, ListenerMethod } from "./listener";
 import { sleep } from "./utils";
@@ -583,4 +583,29 @@ export const removeEventListener = (
   listeners[method].delete(handler);
 };
 
+// ------------------------------------------------------------------------
+// --------------------------WASM Utilities--------------------------------
+// ------------------------------------------------------------------------
+
+/**
+ * Promise that resolves when the Kaspa WASM module is fully loaded and initialized
+ */
+export { wasmReady } from "./rpc-client";
+
+/**
+ * The Kaspa WASM module
+ * Note: Ensure wasmReady Promise is resolved before using this
+ */
 export const kaspaWasm = wasm;
+
+/**
+ * Ensures the WASM module is loaded before executing a callback
+ * @param callback Function to execute after WASM is ready
+ * @returns Promise resolving to the callback result
+ */
+export const withWasm = async <T>(
+  callback: (wasm: typeof import("./wasm/kaspa")) => T | Promise<T>,
+): Promise<T> => {
+  await wasmReady;
+  return callback(wasm);
+};
