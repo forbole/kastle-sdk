@@ -70,5 +70,5 @@ export const watchBalanceChanged = async (address: string | null) => {
 };
 
 (async () => {
-  await wasmReady.then(connectToRPC);
+  await wasmReady.then(connectToRPC).catch(console.error);
 })();
