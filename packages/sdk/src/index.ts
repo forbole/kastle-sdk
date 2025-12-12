@@ -12,7 +12,7 @@ import {
   Transaction,
   payToAddressScript,
 } from "./wasm/kaspa";
-import { rpcClient, watchBalanceChanged } from "./rpc-client";
+import { rpcClient, watchBalanceChanged, wasmReady } from "./rpc-client";
 import { IWalletEventHandler, NetworkId } from "./interfaces";
 import { listeners, ListenerMethod } from "./listener";
 import { sleep } from "./utils";
@@ -583,4 +583,29 @@ export const removeEventListener = (
   listeners[method].delete(handler);
 };
 
+// ------------------------------------------------------------------------
+// --------------------------WASM Utilities--------------------------------
+// ------------------------------------------------------------------------
+
+/**
+ * Promise that resolves when the Kaspa WASM module is fully loaded and initialized
+ * @example
+ * ```typescript
+ * await wasmReady;
+ * const tx = kaspaWasm.createTransaction(...);
+ * ```
+ */
+export { wasmReady } from "./rpc-client";
+
+/**
+ * The Kaspa WASM module
+ * Note: Ensure wasmReady Promise is resolved before using this
+ * @example
+ * ```typescript
+ * import { kaspaWasm, wasmReady } from 'kastle-sdk';
+ *
+ * await wasmReady;
+ * const address = kaspaWasm.addressFromScriptPublicKey(...);
+ * ```
+ */
 export const kaspaWasm = wasm;

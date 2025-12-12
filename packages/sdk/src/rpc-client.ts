@@ -3,9 +3,21 @@ import { config } from "./config";
 import { getNetwork } from "./index";
 import { sleep } from "./utils";
 
+// Initialize WASM module independently
+let wasmInitialized = false;
+export const wasmReady: Promise<void> = (async () => {
+  if (!wasmInitialized) {
+    await init(config.wasm);
+    wasmInitialized = true;
+  }
+})();
+
 export let rpcClient: RpcClient | undefined;
 
 export const connectToRPC = async () => {
+  // Ensure WASM is initialized before connecting to RPC
+  await wasmReady;
+
   if (rpcClient?.isConnected) {
     rpcClient.removeAllEventListeners();
     await rpcClient.disconnect();
@@ -58,5 +70,5 @@ export const watchBalanceChanged = async (address: string | null) => {
 };
 
 (async () => {
-  await init(config.wasm).then(connectToRPC);
+  await wasmReady.then(connectToRPC).catch(console.error);
 })();
