@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.13.0](https://github.com/forbole/kastle-sdk/compare/v1.12.2...v1.13.0) (2025-12-12)
+
+
+### Features
+
+* update readme ([#8](https://github.com/forbole/kastle-sdk/issues/8)) ([30cc240](https://github.com/forbole/kastle-sdk/commit/30cc240b8f80d1eae0f63e26af22c0afa0be411c))
+
+
+### Bug Fixes
+
+* ensure wasm loaded ([#6](https://github.com/forbole/kastle-sdk/issues/6)) ([e954862](https://github.com/forbole/kastle-sdk/commit/e9548622b254d3390036032c3fdeafca423bad7a))
+
 ## [1.12.1](https://github.com/forbole/kastle-sdk/compare/v1.12.0...v1.12.1) (2025-11-24)
 
 
