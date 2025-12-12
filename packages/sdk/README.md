@@ -21,13 +21,21 @@ npm install @forbole/kastle-sdk
 
 ## Usage
 
+### Basic Setup
+
+Before using any SDK functions, ensure the WASM module is initialized:
+
 ```javascript
 import {
+  wasmReady,
   connect,
   getWalletAddress,
   getBalance,
   sendKaspa
 } from '@forbole/kastle-sdk';
+
+// Wait for WASM to be ready
+await wasmReady;
 
 // Connect to the wallet
 const isConnected = await connect();
@@ -48,6 +56,30 @@ if (isConnected) {
 ```
 
 ## API Reference
+
+### WASM Initialization
+
+#### `wasmReady`
+A Promise that resolves when the Kaspa WASM module is fully loaded and initialized.
+
+**Important:** Always await this Promise before using any SDK functions or the `kaspaWasm` module.
+
+```javascript
+import { wasmReady } from '@forbole/kastle-sdk';
+
+await wasmReady;
+// Now safe to use SDK functions
+```
+
+#### `kaspaWasm`
+Direct access to the Kaspa WASM module. Must be used after `wasmReady` resolves.
+
+```javascript
+import { kaspaWasm, wasmReady } from '@forbole/kastle-sdk';
+
+await wasmReady;
+const address = kaspaWasm.addressFromScriptPublicKey(...);
+```
 
 ### Wallet Connection
 
