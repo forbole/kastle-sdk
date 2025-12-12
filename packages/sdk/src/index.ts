@@ -589,23 +589,23 @@ export const removeEventListener = (
 
 /**
  * Promise that resolves when the Kaspa WASM module is fully loaded and initialized
+ * @example
+ * ```typescript
+ * await wasmReady;
+ * const tx = kaspaWasm.createTransaction(...);
+ * ```
  */
 export { wasmReady } from "./rpc-client";
 
 /**
  * The Kaspa WASM module
  * Note: Ensure wasmReady Promise is resolved before using this
+ * @example
+ * ```typescript
+ * import { kaspaWasm, wasmReady } from 'kastle-sdk';
+ *
+ * await wasmReady;
+ * const address = kaspaWasm.addressFromScriptPublicKey(...);
+ * ```
  */
 export const kaspaWasm = wasm;
-
-/**
- * Ensures the WASM module is loaded before executing a callback
- * @param callback Function to execute after WASM is ready
- * @returns Promise resolving to the callback result
- */
-export const withWasm = async <T>(
-  callback: (wasm: typeof import("./wasm/kaspa")) => T | Promise<T>,
-): Promise<T> => {
-  await wasmReady;
-  return callback(wasm);
-};
