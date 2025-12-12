@@ -1,10 +1,11 @@
-import { isWalletInstalled } from "@forbole/kastle-sdk";
+import { isWalletInstalled, wasmReady } from "@forbole/kastle-sdk";
 import React, { useEffect, useState } from "react";
 import useConnect from "../hooks/useConnect";
 import DemoDetails from "./DemoDetails";
 
 const KaspaWalletDemo = () => {
   const [walletInstalled, setWalletInstalled] = useState(false);
+  const [wasmLoaded, setWasmLoaded] = useState(false);
   const {
     connected,
     connect: handleConnect,
@@ -26,6 +27,13 @@ const KaspaWalletDemo = () => {
     checkWalletInstallation();
   }, []);
 
+  useEffect(() => {
+    wasmReady
+      .then(() => {
+        setWasmLoaded(true);
+      })
+  }, []);
+
   return (
     <div className="p-6 max-w-lg mx-auto bg-white rounded-xl shadow-md">
       <h1 className="text-2xl font-bold mb-4">Kaspa Wallet Demo</h1>
@@ -34,6 +42,7 @@ const KaspaWalletDemo = () => {
       <div className="mb-4">
         <p className="font-semibold">Wallet Status:</p>
         <p>{walletInstalled ? "Installed ✓" : "Not Installed ✗"}</p>
+        <p>{wasmLoaded ? "WASM Loaded ✓" : "Loading WASM..."}</p>
       </div>
 
       {/* Connect/Disconnect Buttons */}
