@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.13.1](https://github.com/forbole/kastle-sdk/compare/v1.13.0...v1.13.1) (2025-12-18)
+
+
+### Bug Fixes
+
+* update revealScript to use fetched UTXOs for address ([#11](https://github.com/forbole/kastle-sdk/issues/11)) ([28b7f27](https://github.com/forbole/kastle-sdk/commit/28b7f27e5ad852b831a52b49b713dd14cbb40de4))
+
 ## [1.13.0](https://github.com/forbole/kastle-sdk/compare/v1.12.2...v1.13.0) (2025-12-12)
 
 
