@@ -465,11 +465,16 @@ export const revealScript = async (
     retryCount++;
   }
 
+  const address = await getWalletAddress();
+  const { entries } = await rpcClient.getUtxosByAddresses({
+    addresses: [address],
+  });
+
   // Reveal the script
   const { transactions: revealTransactions } = await createTransactions({
-    changeAddress: await getWalletAddress(),
+    changeAddress: address,
     priorityEntries: [scriptUtxo],
-    entries: [scriptUtxo],
+    entries,
     outputs: [],
     priorityFee: priorityFee ?? BigInt(0),
     networkId: await getNetwork(),
