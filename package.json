@@ -6,6 +6,9 @@
     "examples/*"
   ],
   "private": false,
+  "scripts": {
+    "version": "npm version $npm_package_version --prefix packages/sdk --no-git-tag-version && git add packages/sdk/package.json"
+  },
   "devDependencies": {
     "prettier": "3.5.3"
   }
