@@ -1,5 +1,6 @@
 import { getKaspaProvider } from "./kastle/provider";
 import {
+  createTransaction,
   createTransactions,
   ScriptBuilder,
   PublicKey,
@@ -8,14 +9,23 @@ import {
   kaspaToSompi,
   IUtxoEntry,
   IPaymentOutput,
-  createTransaction,
   Transaction,
   payToAddressScript,
 } from "./wasm/kaspa";
-import { rpcClient, watchBalanceChanged, wasmReady } from "./rpc-client";
-import { IWalletEventHandler, NetworkId } from "./interfaces";
-import { listeners, ListenerMethod } from "./listener";
-import { sleep } from "./utils";
+import { withRpc, watchBalanceChanged, wasmReady } from "./rpc-client";
+import {
+  IWalletEventHandler,
+  NetworkId,
+  IAccount,
+  IBalance,
+  IUtxoEntriesResponse,
+  IBuildTransactionResponse,
+  ISignScript,
+  ICommitRevealOptions,
+  ICommitRevealResponse,
+  KastleEventType,
+} from "./interfaces";
+import { listeners, ListenerMethod, removeKastleListeners } from "./listener";
 import * as wasm from "./wasm/kaspa";
 
 // ------------------------------------------------------------------------
@@ -45,19 +55,32 @@ export const disconnect = async (): Promise<void> => {
  * Connect the wallet for the platform
  */
 export const connect = async (): Promise<boolean> => {
-  const connected = await (await getKaspaProvider()).connect();
-  watchBalanceChanged(await getWalletAddress());
+  const provider = await getKaspaProvider();
+  const connected = await provider.request("kas:connect");
+  await watchBalanceChanged(await getWalletAddress());
   return connected;
+};
+
+/**
+ * Returns the current wallet version in SemVer format.
+ * Build metadata suffix identifies the platform (+extension or +mobile).
+ */
+export const getVersion = async (): Promise<string> => {
+  return (await getKaspaProvider()).request("kas:get_version");
+};
+
+/**
+ * Returns the full account object containing address and publicKey
+ */
+export const getAccount = async (): Promise<IAccount> => {
+  return (await getKaspaProvider()).request("kas:get_account");
 };
 
 /**
  * Returns the currently connected wallet address
  */
 export const getWalletAddress = async (): Promise<string> => {
-  let account: { address: string; publicKey: string } = await (
-    await getKaspaProvider()
-  ).request("kas:get_account");
-
+  const account = await getAccount();
   return account.address;
 };
 
@@ -65,80 +88,71 @@ export const getWalletAddress = async (): Promise<string> => {
  * Retrieves the public key associated with the wallet
  */
 export const getPublicKey = async (): Promise<string> => {
-  let account: { address: string; publicKey: string } = await (
-    await getKaspaProvider()
-  ).request("kas:get_account");
-
+  const account = await getAccount();
   return account.publicKey;
 };
 
 /**
- * Returns the active Kaspa network (mainnet, testnet)
+ * Returns the active Kaspa network (mainnet, testnet-10, testnet-11)
  */
 export const getNetwork = async (): Promise<NetworkId> => {
-  return await (await getKaspaProvider()).request("kas:get_network");
+  return (await getKaspaProvider()).request("kas:get_network");
 };
 
 /**
  * Requests a network switch to a different Kaspa chain
- * @param networkId The network to switch to
+ * @param networkId The network to switch to ("mainnet" | "testnet-10")
  */
 export const switchNetwork = async (
   networkId: NetworkId,
 ): Promise<NetworkId> => {
-  const target: NetworkId = await (
-    await getKaspaProvider()
-  ).request("kas:switch_network", networkId);
-
-  return target;
+  return (await getKaspaProvider()).request("kas:switch_network", networkId);
 };
 
 /**
- * Fetches the current balance of the wallet
+ * Fetches the current balance of the wallet in sompi.
+ * Returns the balance as bigint for backward compatibility.
+ * Use getBalanceInfo() to get the full IBalance object.
  */
 export const getBalance = async (): Promise<bigint> => {
-  const address = await getWalletAddress();
-  const response = await rpcClient?.getBalanceByAddress({ address });
-
-  return response?.balance ?? BigInt(0);
+  const result: IBalance = await (
+    await getKaspaProvider()
+  ).request("kas:get_balance");
+  return BigInt(result.balance);
 };
 
 /**
- * Sends Kaspa (KAS) to another address
+ * Returns all UTXOs for the current account using the wallet's native API.
+ * No RPC or WASM needed.
+ */
+export const getUtxoEntries = async (): Promise<IUtxoEntriesResponse> => {
+  return (await getKaspaProvider()).request("kas:get_utxo_entries");
+};
+
+/**
+ * Sends Kaspa (KAS) to another address.
+ * Builds, signs, and broadcasts in one call — no RPC or WASM needed.
  * @param toAddress Recipient address
  * @param amountSompi Amount to send in sompi
- * @param options Optional parameters including priorityFee
+ * @param options Optional parameters including priorityFee (in sompi)
  */
 export const sendKaspa = async (
   toAddress: string,
-  amountSompi: bigint,
-  options?: { priorityFee?: bigint },
+  amountSompi: number | bigint,
+  options?: { priorityFee?: number | bigint },
 ): Promise<string> => {
-  if (!rpcClient) throw new Error("Unable to reach RPC");
-
-  let currentAddress = await getWalletAddress();
-  let { entries } = await rpcClient.getUtxosByAddresses({
-    addresses: [currentAddress],
-  });
-
-  let { transactions } = await createTransactions({
-    changeAddress: currentAddress,
-    entries,
-    outputs: [
-      {
-        address: toAddress,
-        amount: amountSompi,
-      },
-    ],
-    priorityFee: options?.priorityFee ?? BigInt(0),
-    networkId: await getNetwork(),
-  });
-
-  const [transaction] = transactions;
-
-  return (await getKaspaProvider()).request("kas:sign_and_broadcast_tx", {
-    networkId: await getNetwork(),
-    txJson: transaction.serializeToSafeJSON(),
+  return (await getKaspaProvider()).request("kas:send_sompi", {
+    toAddress,
+    sompi: Number(amountSompi),
+    options: options
+      ? {
+          ...options,
+          priorityFee:
+            options.priorityFee !== undefined
+              ? Number(options.priorityFee)
+              : undefined,
+        }
+      : undefined,
   });
 };
 
@@ -147,7 +161,7 @@ export const sendKaspa = async (
  * @param msg Message to sign
  */
 export const signMessage = async (msg: string): Promise<string> => {
-  return await (await getKaspaProvider()).request("kas:sign_message", msg);
+  return (await getKaspaProvider()).request("kas:sign_message", msg);
 };
 
 /**
@@ -155,41 +169,103 @@ export const signMessage = async (msg: string): Promise<string> => {
  * @param address address
  */
 export const getUtxosByAddress = async (address: string) => {
-  if (!rpcClient) throw new Error("Unable to reach RPC");
-
-  const { entries } = await rpcClient.getUtxosByAddresses({
-    addresses: [address],
-  });
-
+  const { entries } = await withRpc((client) =>
+    client.getUtxosByAddresses({ addresses: [address] }),
+  );
   return entries;
 };
 
 /**
- * Creates a transaction with the given inputs and outputs, NOTE: please add the change output manually
- * @param entries UTXO entries to be used as inputs
- * @param outputs Payment outputs to be included in the transaction
- * @param priorityFee Optional priority fee for the transaction
- * @param payload Optional payload for the transaction
- * @return Serialized transaction JSON string
+ * Builds a transaction from UTXO entries and outputs using WASM.
+ * Returns a serialized transaction JSON string ready for signing.
+ * @param entries UTXO entries to use as inputs
+ * @param outputs Payment outputs
+ * @param payload Optional hex payload
+ * @returns Serialized transaction JSON string
  */
 export const buildTransaction = (
   entries: IUtxoEntry[],
   outputs: IPaymentOutput[],
   payload?: string,
-) => {
+): string => {
   const transaction = createTransaction(entries, outputs, BigInt(0), payload);
   return transaction.serializeToSafeJSON();
 };
 
 /**
- * Sends a transaction with the given inputs and outputs
+ * Builds a transaction from explicit UTXO entries via the wallet's kas:build_transaction API.
+ * @param entries UTXO entries to be used as inputs
+ * @param outputs Payment outputs to be included in the transaction
+ * @param payload Optional hex payload for the transaction
+ * @return Build transaction response with networkId and transactions
+ */
+export const buildTransactionFromUtxos = async (
+  entries: IUtxoEntry[],
+  outputs: IPaymentOutput[],
+  payload?: string,
+): Promise<IBuildTransactionResponse> => {
+  return (await getKaspaProvider()).request("kas:build_transaction", {
+    outputs: outputs.map((o) => ({
+      address: o.address,
+      amount: o.amount.toString(),
+    })),
+    inputs: entries.map((e) => ({
+      address: e.address?.toString(),
+      outpoint: e.outpoint,
+      amount: e.amount.toString(),
+      scriptPublicKey: e.scriptPublicKey,
+      blockDaaScore: e.blockDaaScore.toString(),
+      isCoinbase: e.isCoinbase,
+    })),
+    payload,
+  });
+};
+
+/**
+ * Signs a transaction and broadcasts it to the network. Opens a confirmation popup.
+ * @param networkId The network the transaction was built for
  * @param txJson Transaction safe-serialized JSON string
+ * @param scripts Optional signing scripts (e.g. for P2SH)
  * @return Transaction ID of the sent transaction
  */
+export const signAndBroadcastTx = async (
+  networkId: NetworkId,
+  txJson: string,
+  scripts?: ISignScript[],
+): Promise<string> => {
+  return (await getKaspaProvider()).request("kas:sign_and_broadcast_tx", {
+    networkId,
+    txJson,
+    scripts,
+  });
+};
+
+/**
+ * Signs a transaction without broadcasting it. Returns the signed transaction as JSON.
+ * Useful for marketplace flows (e.g. SingleAnyOneCanPay).
+ * @param networkId The network the transaction was built for
+ * @param txJson Transaction safe-serialized JSON string
+ * @param scripts Optional signing scripts
+ * @return Signed transaction JSON string
+ */
+export const signTx = async (
+  networkId: NetworkId,
+  txJson: string,
+  scripts?: ISignScript[],
+): Promise<string> => {
+  return (await getKaspaProvider()).request("kas:sign_tx", {
+    networkId,
+    txJson,
+    scripts,
+  });
+};
+
+/**
+ * Signs a transaction and broadcasts it to the network.
+ * @deprecated Prefer signAndBroadcastTx() which accepts networkId explicitly.
+ */
 export const sendTransaction = async (txJson: string): Promise<string> => {
-  return await (
-    await getKaspaProvider()
-  ).request("kas:sign_and_broadcast_tx", {
+  return (await getKaspaProvider()).request("kas:sign_and_broadcast_tx", {
     networkId: await getNetwork(),
     txJson,
   });
@@ -207,6 +283,7 @@ export const sendTransactionWithExtraOutputs = async (
   extraOutputs: { address: string; value: bigint }[],
   priorityFee: bigint,
 ) => {
+  await wasmReady;
   const senderUtxos = await getUtxosByAddress(await getWalletAddress());
   const transaction = Transaction.deserializeFromSafeJSON(txJson);
 
@@ -262,14 +339,16 @@ export const sendTransactionWithExtraOutputs = async (
     })),
   ];
 
-  // Add change output to the transaction
-  transaction.outputs = [
-    ...transaction.outputs,
-    {
-      scriptPublicKey: payToAddressScript(await getWalletAddress()),
-      value: changeAmount,
-    },
-  ];
+  // Add change output to the transaction (only if non-zero)
+  if (changeAmount > BigInt(0)) {
+    transaction.outputs = [
+      ...transaction.outputs,
+      {
+        scriptPublicKey: payToAddressScript(await getWalletAddress()),
+        value: changeAmount,
+      },
+    ];
+  }
 
   const txId = await (
     await getKaspaProvider()
@@ -278,7 +357,7 @@ export const sendTransactionWithExtraOutputs = async (
     txJson: transaction.serializeToSafeJSON(),
   });
 
-  return sendTransaction(txId);
+  return txId;
 };
 
 // ------------------------------------------------------------------------
@@ -301,7 +380,7 @@ export type ScriptOption = {
 };
 
 /**
- * Signs a PSKT transaction
+ * Signs a PSKT transaction using the wallet's native signTx API.
  * @param txJson Transaction safe-serialized JSON string
  * @param scriptOptions Array of script options for signing
  * @return Signed transaction JSON string
@@ -313,35 +392,54 @@ export const signPskt = async (
   const networkId = await getNetwork();
   const scripts = scriptOptions?.map((scriptOption) => ({
     inputIndex: scriptOption.inputIndex,
-    scriptHex: scriptOption.script?.toString(),
+    scriptHex: scriptOption.script?.toString() ?? "",
     signType: scriptOption.signType ?? SignType.All,
   }));
 
-  const signed = await (
-    await getKaspaProvider()
-  ).request("kas:sign_tx", {
+  return (await getKaspaProvider()).request("kas:sign_tx", {
     networkId,
-    txJson: txJson,
+    txJson,
     scripts,
   });
-
-  return signed;
 };
 
-type CommitRevealOptions = {
+/**
+ * Performs a KRC-20 commit-reveal operation using the wallet's native API.
+ * Kastle handles both steps — no WASM needed.
+ * @param networkId The network to perform the operation on
+ * @param namespace Protocol namespace (e.g. "kasplex")
+ * @param data JSON-stringified protocol action payload
+ * @param options Optional priority fees for commit and reveal transactions
+ */
+export const commitReveal = async (
+  networkId: NetworkId,
+  namespace: string,
+  data: string,
+  options?: ICommitRevealOptions,
+): Promise<ICommitRevealResponse> => {
+  return (await getKaspaProvider()).request("kas:commit_reveal", {
+    networkId,
+    namespace,
+    data,
+    options,
+  });
+};
+
+type LegacyCommitRevealOptions = {
   commitPriorityFee?: bigint;
   revealPriorityFee?: bigint;
 };
 
 /**
- * Commits and reveals a script, which can be used for minting/listing KRC assets
+ * Commits and reveals a script using the RPC client and WASM.
+ * @deprecated Prefer commitReveal() which uses the wallet's native API and requires no WASM.
  * @param script script to be used for the commit-reveal operation
  * @param options Optional commit-reveal options
  * @return An object containing the commit and reveal transaction IDs, or an error if one occurred
  */
 export const doCommitReveal = async (
   script: ScriptBuilder,
-  options?: CommitRevealOptions,
+  options?: LegacyCommitRevealOptions,
 ): Promise<{
   commitTxId?: string;
   revealTxId?: string;
@@ -383,47 +481,37 @@ export const commitScript = async (
   script: ScriptBuilder,
   priorityFee?: bigint,
 ): Promise<string> => {
-  if (!rpcClient) throw new Error("Unable to reach RPC");
+  await wasmReady;
 
   const networkId = await getNetwork();
-
-  // Prepare the property for the commit-reveal operations
   const address = await getWalletAddress();
   const scriptAddress = addressFromScriptPublicKey(
     script.createPayToScriptHashScript(),
-    await getNetwork(),
+    networkId,
   );
+
   if (!scriptAddress) {
     throw new Error("Failed to get script address from script");
   }
 
-  const { entries } = await rpcClient.getUtxosByAddresses({
-    addresses: [address],
-  });
-
-  const { transactions: commitTransactions } = await createTransactions({
-    changeAddress: address,
-    entries,
-    outputs: [
-      {
-        address: scriptAddress,
-        amount: kaspaToSompi("0.2")!, // 0.2 KAS is the minimum amount for creating a utxo
-      },
-    ],
-    priorityFee: priorityFee ?? BigInt(0),
-    networkId,
+  const { transactions: commitTransactions } = await withRpc(async (client) => {
+    const { entries } = await client.getUtxosByAddresses({
+      addresses: [address],
+    });
+    return createTransactions({
+      changeAddress: address,
+      entries,
+      outputs: [{ address: scriptAddress, amount: kaspaToSompi("0.2")! }],
+      priorityFee: priorityFee ?? BigInt(0),
+      networkId,
+    });
   });
 
   const [commitTransaction] = commitTransactions;
-
-  const commitTxId = await (
-    await getKaspaProvider()
-  ).request("kas:sign_and_broadcast_tx", {
+  return (await getKaspaProvider()).request("kas:sign_and_broadcast_tx", {
     networkId,
     txJson: commitTransaction.serializeToSafeJSON(),
   });
-
-  return commitTxId;
 };
 
 /**
@@ -438,7 +526,7 @@ export const revealScript = async (
   script: ScriptBuilder,
   priorityFee?: bigint,
 ): Promise<string> => {
-  if (!rpcClient) throw new Error("Unable to reach RPC");
+  await wasmReady;
 
   const scriptAddress = addressFromScriptPublicKey(
     script.createPayToScriptHashScript(),
@@ -452,49 +540,38 @@ export const revealScript = async (
   let retryCount = 0;
   let scriptUtxo: IUtxoEntry | undefined = undefined;
   while (!scriptUtxo) {
-    if (retryCount > 10) {
+    if (retryCount > 30) {
       throw new Error("Commit transaction not confirmed in time");
     }
-
     scriptUtxo = await getCommitScriptUtxo(script, commitTxId);
-    if (scriptUtxo) {
-      break;
-    }
-
-    await sleep(1000); // Wait for 1 second before retrying
+    if (scriptUtxo) break;
+    await new Promise((r) => setTimeout(r, 2000));
     retryCount++;
   }
 
   const address = await getWalletAddress();
-  const { entries } = await rpcClient.getUtxosByAddresses({
-    addresses: [address],
-  });
+  const networkId = await getNetwork();
 
-  // Reveal the script
-  const { transactions: revealTransactions } = await createTransactions({
-    changeAddress: address,
-    priorityEntries: [scriptUtxo],
-    entries,
-    outputs: [],
-    priorityFee: priorityFee ?? BigInt(0),
-    networkId: await getNetwork(),
+  const { transactions: revealTransactions } = await withRpc(async (client) => {
+    const { entries } = await client.getUtxosByAddresses({
+      addresses: [address],
+    });
+    return createTransactions({
+      changeAddress: address,
+      priorityEntries: [scriptUtxo!],
+      entries,
+      outputs: [],
+      priorityFee: priorityFee ?? BigInt(0),
+      networkId,
+    });
   });
 
   const [revealTransaction] = revealTransactions;
-  const revealTxId = await (
-    await getKaspaProvider()
-  ).request("kas:sign_and_broadcast_tx", {
-    networkId: await getNetwork(),
+  return (await getKaspaProvider()).request("kas:sign_and_broadcast_tx", {
+    networkId,
     txJson: revealTransaction.serializeToSafeJSON(),
-    scripts: [
-      {
-        inputIndex: 0,
-        scriptHex: script.toString(),
-      },
-    ],
+    scripts: [{ inputIndex: 0, scriptHex: script.toString() }],
   });
-
-  return revealTxId;
 };
 
 /**
@@ -533,7 +610,7 @@ export const getCommitScriptUtxo = async (
   script: ScriptBuilder,
   commitTxId: string,
 ) => {
-  if (!rpcClient) throw new Error("Unable to reach RPC");
+  await wasmReady;
 
   const scriptAddress = addressFromScriptPublicKey(
     script.createPayToScriptHashScript(),
@@ -555,6 +632,32 @@ export const getCommitScriptUtxo = async (
 // -----------------------------------------------------------------------
 
 /**
+ * Registers an event listener on the Kastle provider.
+ * Supports both KasWare-compatible events ("accountsChanged", "networkChanged")
+ * and KIP-style events ("kas:account_changed", "kas:network_changed").
+ * @param event Event name
+ * @param handler Event handler
+ */
+export const on = async (
+  event: KastleEventType | string,
+  handler: IWalletEventHandler,
+): Promise<void> => {
+  (await getKaspaProvider()).on(event, handler);
+};
+
+/**
+ * Removes an event listener from the Kastle provider.
+ * @param event Event name
+ * @param handler Event handler to remove
+ */
+export const removeListener = async (
+  event: KastleEventType | string,
+  handler: IWalletEventHandler,
+): Promise<void> => {
+  (await getKaspaProvider()).removeListener(event, handler);
+};
+
+/**
  * Registers event handler for performing actions when wallet events occur
  * @param method Event method (e.g., "kas:network_changed", "kas:account_changed" or "kas:balance_changed")
  * @param handler Event handler
@@ -574,6 +677,7 @@ export const removeEventListeners = (): void => {
     const typedMethod = method as ListenerMethod;
     listeners[typedMethod].clear();
   }
+  removeKastleListeners();
 };
 
 /**
@@ -586,6 +690,13 @@ export const removeEventListener = (
   handler: IWalletEventHandler,
 ): void => {
   listeners[method].delete(handler);
+  // If no more handlers for both native events, unregister kastle's internal listeners
+  if (
+    listeners["kas:account_changed"].size === 0 &&
+    listeners["kas:network_changed"].size === 0
+  ) {
+    removeKastleListeners();
+  }
 };
 
 // ------------------------------------------------------------------------

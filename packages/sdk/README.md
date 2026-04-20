@@ -1,6 +1,6 @@
 # @forbole/kastle-sdk
 
-A JavaScript library for integrating Kaspa cryptocurrency wallet functionality into web applications.
+A JavaScript/TypeScript library for integrating Kaspa wallet functionality into web applications via the [Kastle](https://kastle.io) browser extension.
 
 [![npm version](https://img.shields.io/npm/v/@forbole/kastle-sdk.svg)](https://www.npmjs.com/package/@forbole/kastle-sdk)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
@@ -11,168 +11,244 @@ A JavaScript library for integrating Kaspa cryptocurrency wallet functionality i
 npm install @forbole/kastle-sdk
 ```
 
-## Features
+## Requirements
 
-- Connect to and manage Kaspa wallets
-- Fetch balances and address information
-- Send KAS transactions
-- Handle wallet events (network changes, account changes)
-- Support for multiple networks (mainnet, testnet)
+- The [Kastle](https://kastle.io) browser extension must be installed.
+- A modern browser with WebAssembly support (for WASM-based features).
 
-## Usage
+## Quick Start
 
-### Basic Setup
+```typescript
+import { connect, getWalletAddress, getBalance, sendKaspa } from '@forbole/kastle-sdk';
 
-Before using any SDK functions, ensure the WASM module is initialized:
-
-```javascript
-import {
-  wasmReady,
-  connect,
-  getWalletAddress,
-  getBalance,
-  sendKaspa
-} from '@forbole/kastle-sdk';
-
-// Wait for WASM to be ready
-await wasmReady;
-
-// Connect to the wallet
+// Connect wallet
 const isConnected = await connect();
 
 if (isConnected) {
-  // Get the wallet address
   const address = await getWalletAddress();
-  console.log(`Connected to address: ${address}`);
-  
-  // Get the wallet balance
-  const balance = await getBalance();
-  console.log(`Balance: ${balance} sompi`);
-  
-  // Send KAS to another address
-  const txId = await sendKaspa('kaspa:recipient_address', 1000000);
-  console.log(`Transaction sent with ID: ${txId}`);
+  const balance = await getBalance(); // returns bigint (sompi)
+
+  // Send 1 KAS (100,000,000 sompi)
+  const txId = await sendKaspa(address, 100_000_000n);
+  console.log('Transaction ID:', txId);
 }
 ```
 
+---
+
 ## API Reference
 
-### WASM Initialization
+### Wallet Connection
 
-#### `wasmReady`
-A Promise that resolves when the Kaspa WASM module is fully loaded and initialized.
+#### `isWalletInstalled(): Promise<boolean>`
+Returns `true` if the Kastle wallet extension is detected.
 
-**Important:** Always await this Promise before using any SDK functions or the `kaspaWasm` module.
+#### `connect(): Promise<boolean>`
+Requests wallet connection. Opens a Kastle approval popup.
 
-```javascript
-import { wasmReady } from '@forbole/kastle-sdk';
+#### `disconnect(): Promise<void>`
+Disconnects the wallet.
 
-await wasmReady;
-// Now safe to use SDK functions
+#### `getVersion(): Promise<string>`
+Returns the wallet version string in SemVer format (e.g. `1.13.1+extension`).
+
+---
+
+### Wallet Information
+
+#### `getAccount(): Promise<IAccount>`
+Returns the full account object `{ address, publicKey }`.
+
+#### `getWalletAddress(): Promise<string>`
+Returns the currently connected wallet address.
+
+#### `getPublicKey(): Promise<string>`
+Returns the public key of the connected wallet.
+
+#### `getNetwork(): Promise<NetworkId>`
+Returns the active network: `"mainnet"` | `"testnet-10"` | `"testnet-11"`.
+
+#### `switchNetwork(networkId: NetworkId): Promise<NetworkId>`
+Requests a network switch. Returns the new active network.
+
+#### `getBalance(): Promise<bigint>`
+Returns the wallet balance in sompi as `bigint`.
+
+#### `getUtxoEntries(): Promise<IUtxoEntriesResponse>`
+Returns all unspent UTXOs for the current account (wallet native API, no RPC needed).
+
+---
+
+### Transactions
+
+#### `sendKaspa(toAddress, amountSompi, options?): Promise<string>`
+Builds, signs, and broadcasts a KAS transfer in one call. No RPC or WASM needed.
+
+```typescript
+const txId = await sendKaspa(
+  'kaspa:qr...',
+  100_000_000n,           // amount in sompi (bigint or number)
+  { priorityFee: 10000n } // optional
+);
 ```
 
-#### `kaspaWasm`
-Direct access to the Kaspa WASM module. Must be used after `wasmReady` resolves.
+#### `signMessage(msg: string): Promise<string>`
+Signs a message with the wallet private key. Returns the hex signature.
 
-```javascript
-import { kaspaWasm, wasmReady } from '@forbole/kastle-sdk';
+---
+
+### Advanced Transactions (WASM + RPC)
+
+> These functions require WebAssembly and an active RPC connection to a Kaspa node.
+> Await `wasmReady` before use.
+
+#### `getUtxosByAddress(address: string): Promise<IUtxoEntry[]>`
+Fetches UTXOs for a given address via RPC.
+
+#### `buildTransaction(entries, outputs, payload?): string`
+Builds a transaction using WASM and returns a safe-serialized JSON string.
+
+#### `buildTransactionFromUtxos(entries, outputs, payload?): Promise<IBuildTransactionResponse>`
+Builds a transaction via the wallet's native `kas:build_transaction` API.
+
+#### `signAndBroadcastTx(networkId, txJson, scripts?): Promise<string>`
+Signs and broadcasts a transaction. Opens a Kastle confirmation popup.
+
+#### `signTx(networkId, txJson, scripts?): Promise<string>`
+Signs a transaction without broadcasting. Useful for marketplace flows.
+
+#### `sendTransaction(txJson): Promise<string>`
+@deprecated — Use `signAndBroadcastTx()` instead.
+
+#### `sendTransactionWithExtraOutputs(txJson, extraOutputs, priorityFee): Promise<string>`
+Adds extra outputs to an existing transaction and broadcasts it.
+
+---
+
+### KRC-20 / Commit-Reveal
+
+#### `commitReveal(networkId, namespace, data, options?): Promise<ICommitRevealResponse>`
+Performs a full commit-reveal operation using the wallet's native API. Kastle handles both steps — **no WASM or RPC needed**.
+
+```typescript
+const { commitTxId, revealTxId } = await commitReveal(
+  'testnet-10',
+  'kasplex',
+  JSON.stringify({ p: 'krc-20', op: 'mint', tick: 'TTTT' }),
+  { revealPriorityFee: '100000' }
+);
+```
+
+#### `doCommitReveal(script, options?): Promise<{ commitTxId?, revealTxId?, error? }>`
+@deprecated — Performs commit-reveal using WASM + RPC. Prefer `commitReveal()`.
+
+#### `commitScript(script, priorityFee?): Promise<string>`
+Performs only the commit phase via WASM + RPC.
+
+#### `revealScript(commitTxId, script, priorityFee?): Promise<string>`
+Performs only the reveal phase via WASM + RPC. Polls up to 60 seconds for commit confirmation.
+
+#### `buildRevealCommitScript(publicKeyHex, protocol, protocolAction): ScriptBuilder`
+Builds a commit-reveal script for a protocol action.
+
+#### `getCommitScriptUtxo(script, commitTxId): Promise<IUtxoEntry | undefined>`
+Retrieves the UTXO associated with a commit transaction.
+
+---
+
+### PSKT / Script Signing
+
+#### `signPskt(txJson, scriptOptions?): Promise<string>`
+Signs a PSKT transaction using the wallet's `signTx` API. Returns the signed transaction JSON.
+
+```typescript
+import { signPskt, SignType } from '@forbole/kastle-sdk';
+
+const signedTx = await signPskt(txJson, [
+  { inputIndex: 0, script: myScript, signType: SignType.SingleAnyOneCanPay }
+]);
+```
+
+**`SignType` values:** `All` | `None` | `Single` | `AllAnyOneCanPay` | `NoneAnyOneCanPay` | `SingleAnyOneCanPay`
+
+---
+
+### Event Listeners
+
+#### `setEventListener(method, handler): void`
+Registers a handler for SDK-level events.
+
+```typescript
+import { setEventListener } from '@forbole/kastle-sdk';
+
+setEventListener('kas:balance_changed', (balance: bigint) => {
+  console.log('New balance:', balance);
+});
+
+setEventListener('kas:account_changed', (address: string | null) => {
+  console.log('Account changed:', address);
+});
+
+setEventListener('kas:network_changed', (network: string) => {
+  console.log('Network changed:', network);
+});
+```
+
+**Available methods:** `kas:balance_changed` | `kas:account_changed` | `kas:network_changed` | `kas:host_connected`
+
+#### `removeEventListener(method, handler): void`
+Removes a specific event listener.
+
+#### `removeEventListeners(): void`
+Removes all event listeners.
+
+#### `on(event, handler): Promise<void>`
+Registers a listener directly on the Kastle provider (raw events).
+
+#### `removeListener(event, handler): Promise<void>`
+Removes a listener from the Kastle provider.
+
+---
+
+### WASM Utilities
+
+#### `wasmReady: Promise<void>`
+Resolves when the Kaspa WASM module is fully loaded. Await before using WASM-dependent functions.
+
+```typescript
+import { wasmReady, kaspaWasm } from '@forbole/kastle-sdk';
 
 await wasmReady;
 const address = kaspaWasm.addressFromScriptPublicKey(...);
 ```
 
-### Wallet Connection
+#### `kaspaWasm`
+Direct access to the Kaspa WASM module exports.
 
-#### `isWalletInstalled()`
-Checks if a compatible Kaspa wallet provider is installed.
-- Returns: `boolean`
+---
 
-#### `connect(networkId?)`
-Connects to the wallet on the specified network.
-- Parameters:
-    - `networkId` (optional): The network to connect to (default: 'mainnet')
-- Returns: `Promise<boolean>` - True if connection was successful
+## Types
 
-#### `disconnect(origin?)`
-Disconnects the wallet.
-- Parameters:
-    - `origin` (optional): Origin parameter
-- Returns: `Promise<void>`
+```typescript
+type NetworkId = "mainnet" | "testnet-10" | "testnet-11";
 
-#### `getNetwork()`
-Returns the active Kaspa network.
-- Returns: `Promise<NetworkId>` ('mainnet' or 'testnet')
+interface IAccount {
+  address: string;
+  publicKey: string;
+}
 
-#### `switchNetwork(networkId)`
-Switches to a different Kaspa network.
-- Parameters:
-    - `networkId`: The network to switch to
-- Returns: `Promise<boolean>` - True if successful
+interface ICommitRevealOptions {
+  commitPriorityFee?: string; // sompi as string
+  revealPriorityFee?: string;
+}
 
-### Wallet Information
+interface ICommitRevealResponse {
+  commitTxId: string;
+  revealTxId: string;
+}
+```
 
-#### `getWalletAddress()`
-Returns the currently connected wallet address.
-- Returns: `Promise<string>`
-
-#### `getPublicKey()`
-Retrieves the public key associated with the wallet.
-- Returns: `Promise<string>`
-
-#### `getBalance()`
-Fetches the current balance of the wallet in sompi.
-- Returns: `Promise<number>`
-
-#### `getUtxoAddress(p2shAddress?)`
-Retrieves unspent UTXOs for the wallet.
-- Parameters:
-    - `p2shAddress` (optional): Optional p2sh address
-- Returns: `Promise<any[]>`
-
-### Transactions
-
-#### `sendKaspa(toAddress, amountSompi, options?)`
-Sends Kaspa (KAS) to another address.
-- Parameters:
-    - `toAddress`: Recipient address
-    - `amountSompi`: Amount to send in sompi
-    - `options` (optional): Additional options like `priorityFee`
-- Returns: `Promise<string>` - Transaction ID
-
-### Event Handling
-
-#### `setEventListeners(eventListeners)`
-Registers event listeners for account/network/balance changes.
-- Parameters:
-    - `eventListeners`: Event listener function
-
-#### `removeEventListeners()`
-Removes all event listeners.
-- Returns: `void`
-
-## Features Under Development
-
-The following features are currently under development and not yet fully implemented:
-
-### ⚠️ `signPskt(txJsonString, submit?, protocol?, protocolAction?, priorityFee?)`
-Signs a PSKT transaction for KRC20/KRC721 transfers.
-
-### ⚠️ `doCommitReveal(actionScript, options?)`
-Commits and reveals a transaction, used for minting/listing KRC assets.
-
-### ⚠️ `doRevealOnly(options)`
-Performs only the reveal phase of a commit-reveal operation.
-
-### ⚠️ `signMessage(msg, type?)`
-Signs a message using the wallet's private key and returns the signature.
-
-### ⚠️ `compoundUtxo()`
-Compounds wallet UTXOs.
-
-## Requirements
-
-- A compatible Kaspa wallet extension must be installed in the browser
-- Web application with JavaScript or TypeScript support
+---
 
 ## License
 

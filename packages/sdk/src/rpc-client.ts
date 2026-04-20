@@ -1,74 +1,96 @@
 import init, { Encoding, RpcClient } from "./wasm/kaspa";
 import { config } from "./config";
 import { getNetwork } from "./index";
-import { sleep } from "./utils";
+import { getKaspaProvider } from "./kastle/provider";
 
 // Initialize WASM module independently
 let wasmInitialized = false;
 export const wasmReady: Promise<void> = (async () => {
   if (!wasmInitialized) {
-    await init(config.wasm);
-    wasmInitialized = true;
+    try {
+      await init(config.wasm);
+      wasmInitialized = true;
+    } catch (e) {
+      console.error(
+        "[kastle-sdk] Failed to load WASM (possible CORS issue):",
+        e,
+      );
+      // Don't hang forever — resolve so callers can proceed and fail gracefully
+    }
   }
 })();
 
-export let rpcClient: RpcClient | undefined;
-
-export const connectToRPC = async () => {
-  // Ensure WASM is initialized before connecting to RPC
+/**
+ * Creates a one-shot RPC client for the current network,
+ * runs the given query, then disconnects immediately.
+ */
+export const withRpc = async <T>(
+  fn: (client: RpcClient) => Promise<T>,
+): Promise<T> => {
   await wasmReady;
-
-  if (rpcClient?.isConnected) {
-    rpcClient.removeAllEventListeners();
-    await rpcClient.disconnect();
-  }
-
   const networkId = await getNetwork();
-
-  rpcClient = new RpcClient({
-    url: config.rpcEndpoints[networkId],
+  const url =
+    config.rpcEndpoints[networkId as keyof typeof config.rpcEndpoints];
+  if (!url) {
+    throw new Error(
+      `[kastle-sdk] No RPC endpoint configured for network: ${networkId}`,
+    );
+  }
+  const client = new RpcClient({
+    url,
     encoding: Encoding.Borsh,
     networkId,
   });
-
-  await rpcClient.connect();
-};
-
-// TODO: have a better way to handle rpc client connection
-const waitForRPCConnected = async () => {
-  while (!rpcClient?.isConnected) {
-    await sleep(100);
+  await client.connect();
+  try {
+    return await fn(client);
+  } finally {
+    await client.disconnect();
   }
 };
 
+let balancePollInterval: ReturnType<typeof setInterval> | undefined;
+let lastBalance: string | undefined;
+
+export const resetLastBalance = () => {
+  lastBalance = undefined;
+};
+
+/**
+ * Fetches the current balance once and emits kas:balance_changed if changed.
+ * Called directly by built-in events (account_changed, network_changed).
+ */
+export const fetchBalance = async () => {
+  try {
+    const provider = await getKaspaProvider();
+    const { balance } = await provider.request("kas:get_balance");
+    if (balance !== lastBalance) {
+      lastBalance = balance;
+      window.postMessage({
+        id: "kas:balance_changed",
+        response: BigInt(balance),
+      });
+    }
+  } catch (_) {}
+};
+
+/**
+ * Starts a slow fallback polling interval to catch balance changes
+ * not covered by built-in events (e.g. incoming transactions).
+ * Should be called once on connect / account change.
+ */
 export const watchBalanceChanged = async (address: string | null) => {
-  if (!rpcClient) throw new Error("RPC client is not connected");
-  await waitForRPCConnected();
-
-  // Remove existing event listeners as it only allows one listener at a time
-  rpcClient.removeEventListener("utxos-changed");
-
-  if (!address) {
-    return;
+  // Clear any existing polling
+  if (balancePollInterval !== undefined) {
+    clearInterval(balancePollInterval);
+    balancePollInterval = undefined;
   }
+  lastBalance = undefined;
 
-  // Emit the initial balance when the account is changed
-  const balanceResponse = await rpcClient.getBalanceByAddress({ address });
-  window.postMessage({
-    id: "kas:balance_changed",
-    response: Number(balanceResponse?.balance ?? 0),
-  });
+  if (!address) return;
 
-  rpcClient.subscribeUtxosChanged([address]);
-  rpcClient.addEventListener("utxos-changed", async (event) => {
-    const balanceResponse = await rpcClient?.getBalanceByAddress({ address });
-    window.postMessage({
-      id: "kas:balance_changed",
-      response: Number(balanceResponse?.balance ?? 0),
-    });
-  });
+  // Immediate fetch via built-in event path
+  await fetchBalance();
+  // Fallback polling every 5s for transaction-based balance changes
+  balancePollInterval = setInterval(fetchBalance, 5000);
 };
-
-(async () => {
-  await wasmReady.then(connectToRPC).catch(console.error);
-})();

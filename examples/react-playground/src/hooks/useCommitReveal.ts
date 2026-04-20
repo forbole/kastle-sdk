@@ -2,7 +2,7 @@ import { doCommitReveal, buildRevealCommitScript } from "@forbole/kastle-sdk";
 
 import { useState } from "react";
 
-export default function useCommitRevealScript(
+export default function useCommitReveal(
   protocol: string,
   protocolAction: string,
   publicKeyHex?: string,

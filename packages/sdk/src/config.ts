@@ -1,7 +1,8 @@
 export const config = {
-  wasm: "https://cms.forbole.com/uploads/kaspa_bg_6e2257a60f.wasm",
+  wasm: "https://media.rhyzome.co/media/kaspa_bg.wasm",
   rpcEndpoints: {
-    mainnet: "wss://kaspa-mainnet.forbole.com/borsh",
-    "testnet-10": "wss://kaspa-testnet.forbole.com/borsh",
+    mainnet: "wss://kastle-mainnet-borsh.rhyzome.com",
+    "testnet-10": "wss://kastle-tn10-borsh.rhyzome.com",
+    "testnet-11": "wss://kastle-tn11-borsh.rhyzome.com",
   },
 };

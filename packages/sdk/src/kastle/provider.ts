@@ -6,6 +6,10 @@ declare global {
   }
 }
 
+/**
+ * Resolves the Kastle wallet provider from window.kastle.
+ * Polls every 100ms and rejects after 5 seconds if not found.
+ */
 export const getKaspaProvider = async (): Promise<KaspaProvider> => {
   return new Promise((resolve, reject) => {
     const interval = setInterval(() => {
