@@ -35,10 +35,12 @@ jobs:
 
       - name: Build
         if: ${{ steps.release.outputs.release_created }}
-        run: npm run build --prefix packages/sdk
+        working-directory: packages/sdk
+        run: npm run build
 
       - name: Publish to npm
         if: ${{ steps.release.outputs.release_created }}
-        run: npm publish --prefix packages/sdk
+        working-directory: packages/sdk
+        run: npm publish
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
