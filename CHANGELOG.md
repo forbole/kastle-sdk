@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.14.0](https://github.com/forbole/kastle-sdk/compare/v1.13.1...v1.14.0) (2026-04-20)
+
+
+### Features
+
+* migrate rpc nodes, wasm files and upgrade to use neweset api methods ([3fcddea](https://github.com/forbole/kastle-sdk/commit/3fcddea4c0b2f72da79add5231c90f728baaf592))
+
 ## [1.13.1](https://github.com/forbole/kastle-sdk/compare/v1.13.0...v1.13.1) (2025-12-18)
 
 
